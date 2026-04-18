@@ -1,0 +1,11 @@
+.env
+.co-agent/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+dist/
+build/
+*.egg-info/
