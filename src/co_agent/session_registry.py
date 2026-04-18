@@ -7,6 +7,10 @@ from pathlib import Path
 from co_agent.models import ChannelBinding, utc_now
 
 
+class SessionRegistryError(RuntimeError):
+    pass
+
+
 class SessionRegistry:
     def __init__(self, state_path: Path) -> None:
         self._state_path = state_path
@@ -33,6 +37,12 @@ class SessionRegistry:
     def get(self, channel_id: int) -> ChannelBinding | None:
         return self._bindings.get(channel_id)
 
+    def get_by_session_name(self, session_name: str) -> ChannelBinding | None:
+        for binding in self._bindings.values():
+            if binding.session_name == session_name:
+                return binding
+        return None
+
     def bind(
         self,
         *,
@@ -41,6 +51,11 @@ class SessionRegistry:
         session_name: str,
         bound_by: int,
     ) -> ChannelBinding:
+        existing = self.get_by_session_name(session_name)
+        if existing is not None and existing.channel_id != channel_id:
+            raise SessionRegistryError(
+                f"session {session_name!r} is already bound to channel {existing.channel_id}"
+            )
         now = utc_now()
         binding = ChannelBinding(
             guild_id=guild_id,

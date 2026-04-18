@@ -7,7 +7,7 @@ from discord import app_commands
 
 from co_agent.authz import AccessController
 from co_agent.config import Config
-from co_agent.session_registry import SessionRegistry
+from co_agent.session_registry import SessionRegistry, SessionRegistryError
 from co_agent.tmux_service import TmuxError, TmuxService, normalize_session_name
 
 LOGGER = logging.getLogger(__name__)
@@ -68,12 +68,21 @@ class CoAgentBot(discord.Client):
                 await interaction.response.send_message(str(exc), ephemeral=True)
                 return
             created = self.tmux_service.ensure_session(session_name)
-            binding = self.registry.bind(
-                guild_id=interaction.guild_id,
-                channel_id=interaction.channel_id,
-                session_name=session_name,
-                bound_by=interaction.user.id,
+            self.tmux_service.set_session_environment(
+                session_name,
+                "CO_AGENT_SESSION",
+                session_name,
             )
+            try:
+                binding = self.registry.bind(
+                    guild_id=interaction.guild_id,
+                    channel_id=interaction.channel_id,
+                    session_name=session_name,
+                    bound_by=interaction.user.id,
+                )
+            except SessionRegistryError as exc:
+                await interaction.response.send_message(str(exc), ephemeral=True)
+                return
             verb = "Created and bound" if created else "Bound"
             await interaction.response.send_message(
                 f"{verb} channel <#{binding.channel_id}> to tmux session `{binding.session_name}`.",

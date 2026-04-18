@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -51,6 +52,47 @@ class TmuxService:
             return False
         self._run("new-session", "-d", "-s", session_name)
         return True
+
+    def set_session_environment(self, session_name: str, key: str, value: str) -> None:
+        if not self.session_exists(session_name):
+            raise TmuxError(f"session {session_name!r} does not exist")
+        self._run("set-environment", "-t", session_name, key, value)
+
+    def get_session_environment(self, session_name: str, key: str) -> str | None:
+        if not self.session_exists(session_name):
+            raise TmuxError(f"session {session_name!r} does not exist")
+        proc = subprocess.run(
+            ["tmux", "show-environment", "-t", session_name, key],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        if proc.returncode != 0:
+            return None
+        output = proc.stdout.strip()
+        prefix = f"{key}="
+        if output.startswith(prefix):
+            return output[len(prefix) :]
+        return None
+
+    def get_current_session_name(self) -> str | None:
+        if not (os.environ.get("TMUX") or os.environ.get("TMUX_PANE")):
+            return None
+        args = ["display-message", "-p"]
+        pane = os.environ.get("TMUX_PANE")
+        if pane:
+            args.extend(["-t", pane])
+        args.append("#{session_name}")
+        proc = subprocess.run(
+            ["tmux", *args],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        if proc.returncode != 0:
+            return None
+        session_name = proc.stdout.strip()
+        return session_name or None
 
     def send_text(self, session_name: str, text: str, *, press_enter: bool = True) -> None:
         if not self.session_exists(session_name):

@@ -8,6 +8,7 @@ Discord channel to tmux session bridge.
 - `/send text:<message>`: send text plus Enter into the bound tmux session
 - `/tail lines:<n>`: fetch recent tmux output
 - `/status`: inspect the current binding and tmux session status
+- `co-agent discord-send --message <text>`: let an agent inside a bound tmux session send a reply back to Discord
 
 ## Requirements
 
@@ -49,4 +50,22 @@ Run:
 
 ```bash
 co-agent
+```
+
+Send a Discord message from a local agent process running inside a bound tmux session:
+
+```bash
+co-agent discord-send --message "작업 끝났습니다"
+```
+
+Or read the message from standard input:
+
+```bash
+cat result.txt | co-agent discord-send --stdin
+```
+
+If you need to send from outside tmux, you can still pass the session explicitly:
+
+```bash
+co-agent discord-send --session t1 --message "작업 끝났습니다"
 ```
