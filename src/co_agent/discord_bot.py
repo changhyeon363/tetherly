@@ -73,6 +73,11 @@ class CoAgentBot(discord.Client):
                 "CO_AGENT_SESSION",
                 session_name,
             )
+            self.tmux_service.set_session_environment(
+                session_name,
+                "CO_AGENT_NOTIFY_ON_FINISH",
+                "1",
+            )
             try:
                 binding = self.registry.bind(
                     guild_id=interaction.guild_id,

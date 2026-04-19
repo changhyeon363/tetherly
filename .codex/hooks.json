@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.venv/bin/co-agent codex-permission-request",
+            "statusMessage": "sending permission request to Discord"
+          }
+        ]
+      }
+    ]
+  }
+}
