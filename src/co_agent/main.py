@@ -58,6 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
 def run_bot(config: Config, registry: SessionRegistry) -> None:
     tmux_service = TmuxService()
     access_controller = AccessController(
+        allowed_guild_ids=config.allowed_guild_ids,
         allowed_role_ids=config.allowed_role_ids,
         allowed_user_ids=config.allowed_user_ids,
     )

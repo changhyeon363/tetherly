@@ -7,10 +7,14 @@ import discord
 
 @dataclass(frozen=True)
 class AccessController:
+    allowed_guild_ids: set[int]
     allowed_role_ids: set[int]
     allowed_user_ids: set[int]
 
     def is_allowed(self, interaction: discord.Interaction) -> bool:
+        guild_id = interaction.guild_id
+        if self.allowed_guild_ids and guild_id not in self.allowed_guild_ids:
+            return False
         user = interaction.user
         if user.id in self.allowed_user_ids:
             return True

@@ -40,6 +40,7 @@ def _parse_id_set(raw: str | None) -> set[int]:
 class Config:
     discord_bot_token: str
     state_path: Path
+    allowed_guild_ids: set[int]
     allowed_role_ids: set[int]
     allowed_user_ids: set[int]
     test_guild_id: int | None = None
@@ -55,6 +56,7 @@ class Config:
         return cls(
             discord_bot_token=token,
             state_path=state_path,
+            allowed_guild_ids=_parse_id_set(os.environ.get("CO_AGENT_ALLOWED_GUILD_IDS")),
             allowed_role_ids=_parse_id_set(os.environ.get("CO_AGENT_ALLOWED_ROLE_IDS")),
             allowed_user_ids=_parse_id_set(os.environ.get("CO_AGENT_ALLOWED_USER_IDS")),
             test_guild_id=int(os.environ["CO_AGENT_TEST_GUILD_ID"])
