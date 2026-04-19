@@ -50,6 +50,15 @@ class AccessControllerTest(unittest.TestCase):
         with mock.patch("co_agent.authz.discord.Member", FakeMember):
             self.assertTrue(controller.is_allowed(interaction))
 
+    def test_is_allowed_user_supports_message_author(self) -> None:
+        controller = AccessController(
+            allowed_guild_ids={100},
+            allowed_role_ids=set(),
+            allowed_user_ids={200},
+        )
+
+        self.assertTrue(controller.is_allowed_user(100, SimpleNamespace(id=200)))
+
 
 if __name__ == "__main__":
     unittest.main()

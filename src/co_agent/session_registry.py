@@ -61,6 +61,7 @@ class SessionRegistry:
             guild_id=guild_id,
             channel_id=channel_id,
             session_name=session_name,
+            auto_send=False,
             bound_by=bound_by,
             bound_at=now,
             last_used_at=now,
@@ -68,6 +69,19 @@ class SessionRegistry:
         self._bindings[channel_id] = binding
         self._save()
         return binding
+
+    def set_auto_send(self, channel_id: int, enabled: bool) -> ChannelBinding | None:
+        binding = self._bindings.get(channel_id)
+        if binding is None:
+            return None
+        updated = replace(
+            binding,
+            auto_send=enabled,
+            last_used_at=utc_now(),
+        )
+        self._bindings[channel_id] = updated
+        self._save()
+        return updated
 
     def touch(self, channel_id: int) -> ChannelBinding | None:
         binding = self._bindings.get(channel_id)

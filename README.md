@@ -5,6 +5,7 @@ Discord channel to tmux session bridge.
 ## Features
 
 - `/bind session:<name>`: bind the current Discord channel to a tmux session
+- `/config auto_send:<true|false>`: enable or disable plain-text auto-send for the current bound channel
 - `/send text:<message>`: send text plus Enter into the bound tmux session
 - `/tail lines:<n>`: fetch recent tmux output
 - `/status`: inspect the current binding and tmux session status
@@ -16,6 +17,7 @@ Discord channel to tmux session bridge.
 - Python 3.11+
 - `tmux` installed
 - A Discord bot token
+- Discord `Message Content Intent` enabled if you use `/config auto_send:true`
 
 ## Setup
 

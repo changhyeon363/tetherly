@@ -13,6 +13,7 @@ class ChannelBinding:
     guild_id: int
     channel_id: int
     session_name: str
+    auto_send: bool
     bound_by: int
     bound_at: str
     last_used_at: str
@@ -26,6 +27,7 @@ class ChannelBinding:
             guild_id=int(payload["guild_id"]),
             channel_id=int(payload["channel_id"]),
             session_name=str(payload["session_name"]),
+            auto_send=bool(payload.get("auto_send", False)),
             bound_by=int(payload["bound_by"]),
             bound_at=str(payload["bound_at"]),
             last_used_at=str(payload["last_used_at"]),
