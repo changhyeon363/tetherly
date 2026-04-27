@@ -11,7 +11,8 @@ Discord channel to tmux session bridge.
 - `/tail lines:<n>`: fetch recent tmux output
 - `/status`: inspect the current binding and tmux session status
 - `co-agent discord-send --message <text>`: let an agent inside a bound tmux session send a reply back to Discord
-- `co-agent codex-notify <payload>`: forward Codex notify payloads back to the bound Discord channel
+- `co-agent codex-stop`: handle Codex `Stop` hook payloads (stdin) and forward the last assistant message to the bound Discord channel
+- `co-agent codex-permission-request`: handle Codex `PermissionRequest` hook payloads (stdin) and forward the approval prompt to the bound Discord channel
 
 ## Requirements
 
@@ -82,19 +83,18 @@ If you need to send from outside tmux, you can still pass the session explicitly
 co-agent discord-send --session t1 --message "작업 끝났습니다"
 ```
 
-## Codex Notify
+## Codex Hooks
 
-This repo includes a local [config.toml](/Users/ch/D/ch-pj/co-agent/.codex/config.toml) for Codex:
+This repo enables Codex hooks via [.codex/config.toml](/Users/ch/D/ch-pj/co-agent/.codex/config.toml):
 
 ```toml
-notify = ["./.venv/bin/co-agent", "codex-notify"]
-
 [features]
 codex_hooks = true
 ```
 
-When you run `/bind session:<name>`, the bot stores `CO_AGENT_NOTIFY_ON_FINISH=1` in that tmux session.
-After a Codex turn completes in that session, `co-agent codex-notify` forwards the last assistant message to the bound Discord channel.
+[.codex/hooks.json](/Users/ch/D/ch-pj/co-agent/.codex/hooks.json) registers two hooks:
 
-This repo also includes [hooks.json](/Users/ch/D/ch-pj/co-agent/.codex/hooks.json) with a `PermissionRequest` hook.
-It sends a Discord alert when Codex asks for approval, but it does not auto-allow or auto-deny anything.
+- `Stop` runs `./.venv/bin/co-agent codex-stop` when a Codex turn ends. The handler forwards `last_assistant_message` to the bound Discord channel.
+- `PermissionRequest` runs `./.venv/bin/co-agent codex-permission-request` when Codex is about to ask for approval. The handler forwards the tool, command/input, and reason to the bound Discord channel. It does not return an `allow`/`deny` decision, so Codex's normal approval prompt still appears.
+
+Both handlers only fire when the active tmux session has `CO_AGENT_NOTIFY_ON_FINISH=1`. `/bind session:<name>` sets that flag automatically.

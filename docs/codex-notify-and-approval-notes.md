@@ -1,4 +1,4 @@
-# Codex Notify And Approval Notes
+# Codex Hook Notes
 
 ## Goal
 
@@ -9,149 +9,83 @@ Wanted behavior:
 - when a Codex turn finishes, send the final assistant message to Discord
 - when Codex asks for approval, send an approval-needed message to Discord
 
-## What Works Reliably
+## Current Approach
 
-### `notify`
+Both behaviors are now driven by official Codex hooks. The legacy `notify` integration has been removed.
 
-Codex officially supports `notify` as an external command hook.
+### `Stop` (replaces `notify`)
 
-What it does:
+Codex calls the `Stop` hook when a turn ends. The payload includes:
 
-- runs an external program when the agent finishes a turn
-- passes a JSON payload as the final argument
+- `turn_id`
+- `stop_hook_active`
+- `last_assistant_message` (optional)
+- common input fields (cwd, hook_event_name, ...)
 
-What it is good for:
+`co-agent codex-stop` reads the JSON payload from stdin, looks up the bound Discord channel for the active tmux session, and forwards `last_assistant_message`. It always emits `{}` on stdout so the hook does not request a continuation.
 
-- forwarding the last assistant message to Discord
+### `PermissionRequest`
 
-What it is not good for:
+Codex calls `PermissionRequest` before showing an approval prompt. The payload includes:
 
-- approval-requested events
+- `turn_id`
+- `tool_name` (canonical: `Bash`, `apply_patch`, `mcp__server__tool`, ...)
+- `tool_input`
+- `tool_input.description` (optional human-readable reason)
 
-Current payload fields confirmed from Codex source:
+The hook payload does **not** include the TUI option labels (`1. Yes, proceed`, `2. Yes, and don't ask again for commands that start with X`, etc.) — those are rendered locally by the Codex TUI from the raw command and never travel through the hook.
 
-- `type`
-- `thread-id`
-- `turn-id`
-- `cwd`
-- `client` optional
-- `input-messages`
-- `last-assistant-message` optional
+`co-agent codex-permission-request` reads the JSON from stdin and forwards a Discord message with `tool_name`, the command (for Bash/apply_patch) or full `tool_input` (for MCP tools), and the reason. It emits `{}` on stdout — no `allow` or `deny` decision is returned, so Codex's normal approval prompt still surfaces in the terminal.
 
-Practical conclusion:
+A tail-based variant (capture the recent tmux pane output instead of parsing the payload) was tried and reverted: the hook fires before the TUI renders the approval prompt, so capture timing was unreliable even with a fixed sleep.
 
-- `notify` is the stable path for `agent-turn-complete`
+If we ever want to auto-approve or deny based on tool/repo policy, the handler can be extended to emit:
 
-## What Did Not Work Reliably
-
-### `PermissionRequest` hook
-
-Codex source contains a `PermissionRequest` hook path and JSON schema.
-However, in local testing it did not fire for the approval UI we cared about.
-
-Observed result:
-
-- `notify` worked
-- `PermissionRequest`-based Discord alert did not arrive
-- this remained true even after enabling `codex_hooks` in project-local config
-
-Likely explanation:
-
-- the installed Codex build exposes hook-related code, but the approval flow in practice does not currently route through that hook in a usable way for this scenario
-- `codex_hooks` is still under development, not a stable feature surface
-
-Practical conclusion:
-
-- do not rely on `PermissionRequest` for production approval alerts yet
-
-### `Stop` hook
-
-`Stop` exists in source and is useful for end-of-turn or continuation control.
-It is not the same thing as `approval-requested`.
-
-Practical conclusion:
-
-- `Stop` should not be treated as a direct substitute for approval-requested alerts
-
-## TUI Notifications
-
-Codex TUI supports built-in notifications.
-
-Relevant type names confirmed from source:
-
-- `agent-turn-complete`
-- `approval-requested`
-- `plan-mode-prompt`
-
-Important limitation:
-
-- `tui.notifications` is for local terminal or desktop notifications
-- it does not call an external webhook or script
-
-Practical conclusion:
-
-- useful for local popups
-- not sufficient for Discord delivery
-
-## Current Project Implementation
-
-The current project has a working `notify` integration for turn completion.
-
-Implemented pieces:
-
-- `/bind` now stores `CO_AGENT_NOTIFY_ON_FINISH=1` in the tmux session
-- `co-agent codex-notify <payload>` handles Codex `notify` payloads
-- project-local `.codex/config.toml` points `notify` to the local virtualenv binary
-
-Flow:
-
-1. Discord `/bind session:<name>`
-2. tmux session gets:
-   - `CO_AGENT_SESSION=<session>`
-   - `CO_AGENT_NOTIFY_ON_FINISH=1`
-3. Codex finishes a turn
-4. Codex runs `./.venv/bin/co-agent codex-notify <payload>`
-5. `co-agent` sends `last-assistant-message` to the bound Discord channel
-
-## Important Operational Detail
-
-Using `co-agent` directly in Codex config was not sufficient because the command was not on `PATH` in the relevant shell environment.
-
-Safer project-local configuration is:
-
-```toml
-notify = ["./.venv/bin/co-agent", "codex-notify"]
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PermissionRequest",
+    "decision": { "behavior": "allow" }
+  }
+}
 ```
 
-Likewise for hook commands, use the local virtualenv binary path rather than assuming `PATH`.
+`deny` wins over `allow` if multiple matching hooks decide.
 
-## Current Recommendation
+## Gating
 
-For now:
+Both handlers are gated by the tmux session environment variable `CO_AGENT_NOTIFY_ON_FINISH`. `/bind session:<name>` sets it to `1` so only sessions explicitly bound to a Discord channel produce alerts.
 
-- keep `notify` for final assistant messages
-- do not depend on `PermissionRequest` for approval alerts
+## Operational Detail
 
-If approval alerts are still required, use an external watcher approach instead of unstable Codex hook behavior.
+Codex resolves hook commands relative to its launch shell, so `co-agent` may not be on `PATH`. The project-local config uses the explicit virtualenv binary path:
 
-Most realistic fallback options:
+```toml
+# .codex/config.toml
+[features]
+codex_hooks = true
+```
 
-- wrapper around `codex` execution
-- tmux pane watcher
-- Codex session log watcher
+```json
+// .codex/hooks.json
+{
+  "hooks": {
+    "PermissionRequest": [
+      { "hooks": [{ "type": "command", "command": "./.venv/bin/co-agent codex-permission-request" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "./.venv/bin/co-agent codex-stop" }] }
+    ]
+  }
+}
+```
 
-## Recommended Next Step
+## Hook Output Rules (reference)
 
-If approval-requested Discord alerts remain necessary, prefer a non-hook watcher approach.
+- `Stop` requires JSON on stdout when exit is 0 — plain text is invalid. Use `{}` for "no continuation".
+- `PermissionRequest` ignores plain text on stdout. Returning `{}` (or no body) leaves the normal approval flow intact.
+- Informational logs from these handlers go to stderr, never stdout.
 
-Recommended priority:
+## Local Logs
 
-1. wrapper around `codex`
-2. tmux pane watcher
-3. session JSONL watcher
-
-Reason:
-
-- they depend less on unstable internal hook plumbing
-- they are easier to verify end-to-end
-- they can later be packaged as part of a plugin or reusable library flow
+Each handler appends its raw payload to `.codex/logs/{stop,permission-request}.jsonl` for offline inspection. The directory is gitignored.

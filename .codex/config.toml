@@ -1,4 +1,2 @@
-notify = ["./.venv/bin/co-agent", "codex-notify"]
-
 [features]
 codex_hooks = true

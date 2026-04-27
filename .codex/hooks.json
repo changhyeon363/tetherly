@@ -10,6 +10,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.venv/bin/co-agent codex-stop",
+            "statusMessage": "sending turn-complete notice to Discord"
+          }
+        ]
+      }
     ]
   }
 }

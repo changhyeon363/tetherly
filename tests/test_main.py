@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import io
 import os
 import unittest
 from unittest import mock
 
 from co_agent.main import (
     resolve_session_name,
-    run_codex_notify,
     run_codex_permission_request,
+    run_codex_stop,
 )
 
 
@@ -46,66 +47,72 @@ class ResolveSessionNameTest(unittest.TestCase):
         )
 
 
-class RunCodexNotifyTest(unittest.TestCase):
-    def test_ignores_non_turn_complete_events(self) -> None:
-        args = mock.Mock(payload='{"type":"other"}')
-        with mock.patch("co_agent.main.TmuxService") as tmux_service_cls:
-            self.assertEqual(
-                run_codex_notify(args, config=mock.Mock(), registry=mock.Mock()),
-                0,
-            )
-        tmux_service_cls.assert_not_called()
-
-    def test_skips_when_message_is_missing(self) -> None:
-        args = mock.Mock(payload='{"type":"agent-turn-complete"}')
-        with mock.patch("co_agent.main.TmuxService") as tmux_service_cls:
-            self.assertEqual(
-                run_codex_notify(args, config=mock.Mock(), registry=mock.Mock()),
-                0,
-            )
-        tmux_service_cls.assert_not_called()
+class RunCodexStopTest(unittest.TestCase):
+    def _stdin(self, text: str) -> mock.Mock:
+        return mock.patch("sys.stdin", io.StringIO(text))
 
     def test_sends_last_assistant_message_when_flag_enabled(self) -> None:
-        args = mock.Mock(
-            payload='{"type":"agent-turn-complete","last-assistant-message":"작업이 끝났습니다."}'
-        )
+        payload = '{"hook_event_name":"Stop","last_assistant_message":"작업이 끝났습니다."}'
         tmux_service = mock.Mock()
         tmux_service.get_current_session_name.return_value = "t1"
         tmux_service.get_session_environment.return_value = "1"
         send_result = mock.Mock(chunks_sent=1, channel_id=10, session_name="t1")
+        stdout = io.StringIO()
 
-        with mock.patch("co_agent.main.TmuxService", return_value=tmux_service):
-            with mock.patch("co_agent.main.send_to_session", return_value=send_result) as send:
-                self.assertEqual(
-                    run_codex_notify(args, config=mock.Mock(), registry=mock.Mock()),
-                    0,
-                )
+        with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
+            "co_agent.main.TmuxService", return_value=tmux_service
+        ), mock.patch(
+            "co_agent.main.send_to_session", return_value=send_result
+        ) as send:
+            self.assertEqual(
+                run_codex_stop(config=mock.Mock(), registry=mock.Mock()),
+                0,
+            )
 
         send.assert_called_once()
+        self.assertEqual(stdout.getvalue(), "{}")
+
+    def test_skips_when_message_is_missing(self) -> None:
+        payload = '{"hook_event_name":"Stop"}'
+        stdout = io.StringIO()
+        with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
+            "co_agent.main.TmuxService"
+        ) as tmux_service_cls:
+            self.assertEqual(
+                run_codex_stop(config=mock.Mock(), registry=mock.Mock()),
+                0,
+            )
+        tmux_service_cls.assert_not_called()
+        self.assertEqual(stdout.getvalue(), "{}")
 
     def test_skips_when_notify_flag_is_disabled(self) -> None:
-        args = mock.Mock(
-            payload='{"type":"agent-turn-complete","last-assistant-message":"done"}'
-        )
+        payload = '{"hook_event_name":"Stop","last_assistant_message":"done"}'
         tmux_service = mock.Mock()
         tmux_service.get_current_session_name.return_value = "t1"
         tmux_service.get_session_environment.return_value = None
+        stdout = io.StringIO()
 
-        with mock.patch("co_agent.main.TmuxService", return_value=tmux_service):
-            with mock.patch("co_agent.main.send_to_session") as send:
-                self.assertEqual(
-                    run_codex_notify(args, config=mock.Mock(), registry=mock.Mock()),
-                    0,
-                )
+        with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
+            "co_agent.main.TmuxService", return_value=tmux_service
+        ), mock.patch("co_agent.main.send_to_session") as send:
+            self.assertEqual(
+                run_codex_stop(config=mock.Mock(), registry=mock.Mock()),
+                0,
+            )
 
         send.assert_not_called()
+        self.assertEqual(stdout.getvalue(), "{}")
 
 
 class RunCodexPermissionRequestTest(unittest.TestCase):
+    def _stdin(self, text: str) -> mock.Mock:
+        return mock.patch("sys.stdin", io.StringIO(text))
+
     def test_sends_permission_request_message_when_flag_enabled(self) -> None:
         payload = """
         {
           "hook_event_name": "PermissionRequest",
+          "tool_name": "Bash",
           "tool_input": {
             "command": "git push origin main",
             "description": "Need network access"
@@ -116,38 +123,74 @@ class RunCodexPermissionRequestTest(unittest.TestCase):
         tmux_service.get_current_session_name.return_value = "t1"
         tmux_service.get_session_environment.return_value = "1"
         send_result = mock.Mock(chunks_sent=1, channel_id=10, session_name="t1")
+        stdout = io.StringIO()
 
-        with mock.patch("sys.stdin", mock.Mock(read=mock.Mock(return_value=payload))):
-            with mock.patch("co_agent.main.TmuxService", return_value=tmux_service):
-                with mock.patch(
-                    "co_agent.main.send_to_session", return_value=send_result
-                ) as send:
-                    self.assertEqual(
-                        run_codex_permission_request(
-                            config=mock.Mock(),
-                            registry=mock.Mock(),
-                        ),
-                        0,
-                    )
+        with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
+            "co_agent.main.TmuxService", return_value=tmux_service
+        ), mock.patch(
+            "co_agent.main.send_to_session", return_value=send_result
+        ) as send:
+            self.assertEqual(
+                run_codex_permission_request(
+                    config=mock.Mock(),
+                    registry=mock.Mock(),
+                ),
+                0,
+            )
 
         send.assert_called_once()
         sent_message = send.call_args.kwargs["message"]
         self.assertIn("승인 요청이 필요합니다.", sent_message)
+        self.assertIn("Tool: Bash", sent_message)
         self.assertIn("git push origin main", sent_message)
         self.assertIn("Need network access", sent_message)
+        self.assertEqual(stdout.getvalue(), "{}")
+
+    def test_formats_mcp_tool_input_when_command_missing(self) -> None:
+        payload = (
+            '{"hook_event_name":"PermissionRequest",'
+            '"tool_name":"mcp__fs__read",'
+            '"tool_input":{"path":"/etc/passwd","description":"read host file"}}'
+        )
+        tmux_service = mock.Mock()
+        tmux_service.get_current_session_name.return_value = "t1"
+        tmux_service.get_session_environment.return_value = "1"
+        send_result = mock.Mock(chunks_sent=1, channel_id=10, session_name="t1")
+        stdout = io.StringIO()
+
+        with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
+            "co_agent.main.TmuxService", return_value=tmux_service
+        ), mock.patch(
+            "co_agent.main.send_to_session", return_value=send_result
+        ) as send:
+            self.assertEqual(
+                run_codex_permission_request(
+                    config=mock.Mock(),
+                    registry=mock.Mock(),
+                ),
+                0,
+            )
+
+        sent_message = send.call_args.kwargs["message"]
+        self.assertIn("Tool: mcp__fs__read", sent_message)
+        self.assertIn('"path": "/etc/passwd"', sent_message)
+        self.assertIn("read host file", sent_message)
 
     def test_skips_when_hook_event_name_differs(self) -> None:
         payload = '{"hook_event_name":"Other","tool_input":{"command":"echo hi"}}'
-        with mock.patch("sys.stdin", mock.Mock(read=mock.Mock(return_value=payload))):
-            with mock.patch("co_agent.main.TmuxService") as tmux_service_cls:
-                self.assertEqual(
-                    run_codex_permission_request(
-                        config=mock.Mock(),
-                        registry=mock.Mock(),
-                    ),
-                    0,
-                )
+        stdout = io.StringIO()
+        with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
+            "co_agent.main.TmuxService"
+        ) as tmux_service_cls:
+            self.assertEqual(
+                run_codex_permission_request(
+                    config=mock.Mock(),
+                    registry=mock.Mock(),
+                ),
+                0,
+            )
         tmux_service_cls.assert_not_called()
+        self.assertEqual(stdout.getvalue(), "{}")
 
 
 if __name__ == "__main__":

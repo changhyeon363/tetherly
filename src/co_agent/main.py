@@ -42,15 +42,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="read the message body from standard input",
     )
 
-    codex_notify = subparsers.add_parser(
-        "codex-notify",
-        help="handle Codex notify payloads and forward selected messages to Discord",
+    subparsers.add_parser(
+        "codex-stop",
+        help="handle Codex Stop hook payloads from standard input",
     )
-    codex_notify.add_argument("payload", help="JSON payload from Codex notify")
 
     subparsers.add_parser(
         "codex-permission-request",
-        help="handle Codex permission request hook payloads from standard input",
+        help="handle Codex PermissionRequest hook payloads from standard input",
     )
     return parser
 
@@ -106,37 +105,79 @@ def run_discord_send(
     return 0
 
 
-def run_codex_notify(
-    args: argparse.Namespace,
-    *,
-    config: Config,
-    registry: SessionRegistry,
-) -> int:
-    try:
-        payload = json.loads(args.payload)
-    except json.JSONDecodeError as exc:
-        print(f"Invalid notify payload: {exc}", file=sys.stderr)
-        return 2
+def _emit_empty_hook_output() -> None:
+    sys.stdout.write("{}")
 
-    if payload.get("type") != "agent-turn-complete":
-        return 0
 
-    _append_hook_log("notify", payload)
-
-    message = payload.get("last-assistant-message")
-    if not isinstance(message, str) or not message.strip():
-        return 0
-
-    tmux_service = TmuxService()
+def _notify_session_for_hook(tmux_service: TmuxService) -> str | None:
     current_session = tmux_service.get_current_session_name()
     if current_session is None:
-        return 0
-
+        return None
     notify_flag = tmux_service.get_session_environment(
         current_session,
         "CO_AGENT_NOTIFY_ON_FINISH",
     )
     if notify_flag != "1":
+        return None
+    return current_session
+
+
+def _format_permission_request_message(payload: dict) -> str | None:
+    tool_name = payload.get("tool_name")
+    tool_input = payload.get("tool_input")
+
+    lines = ["승인 요청이 필요합니다."]
+    if isinstance(tool_name, str) and tool_name.strip():
+        lines.append(f"Tool: {tool_name.strip()}")
+
+    description: str | None = None
+    if isinstance(tool_input, dict):
+        command = tool_input.get("command")
+        if isinstance(command, str) and command.strip():
+            lines.append(f"Command: {command.strip()}")
+        else:
+            details = {k: v for k, v in tool_input.items() if k != "description"}
+            if details:
+                lines.append(f"Input: {json.dumps(details, ensure_ascii=False)}")
+        raw_description = tool_input.get("description")
+        if isinstance(raw_description, str) and raw_description.strip():
+            description = raw_description.strip()
+
+    if description:
+        lines.append(f"Reason: {description}")
+
+    if len(lines) == 1:
+        return None
+    return "\n".join(lines)
+
+
+def run_codex_stop(
+    *,
+    config: Config,
+    registry: SessionRegistry,
+) -> int:
+    try:
+        payload = json.load(sys.stdin)
+    except json.JSONDecodeError as exc:
+        print(f"Invalid Stop payload: {exc}", file=sys.stderr)
+        return 2
+
+    event_name = payload.get("hook_event_name")
+    if event_name is not None and event_name != "Stop":
+        _emit_empty_hook_output()
+        return 0
+
+    _append_hook_log("stop", payload)
+
+    message = payload.get("last_assistant_message")
+    if not isinstance(message, str) or not message.strip():
+        _emit_empty_hook_output()
+        return 0
+
+    tmux_service = TmuxService()
+    current_session = _notify_session_for_hook(tmux_service)
+    if current_session is None:
+        _emit_empty_hook_output()
         return 0
 
     try:
@@ -148,11 +189,14 @@ def run_codex_notify(
         )
     except DiscordSendError as exc:
         print(str(exc), file=sys.stderr)
+        _emit_empty_hook_output()
         return 1
 
     print(
-        f"Sent {result.chunks_sent} message chunk(s) to channel {result.channel_id} for session {result.session_name}."
+        f"Sent {result.chunks_sent} message chunk(s) to channel {result.channel_id} for session {result.session_name}.",
+        file=sys.stderr,
     )
+    _emit_empty_hook_output()
     return 0
 
 
@@ -164,38 +208,26 @@ def run_codex_permission_request(
     try:
         payload = json.load(sys.stdin)
     except json.JSONDecodeError as exc:
-        print(f"Invalid permission request payload: {exc}", file=sys.stderr)
+        print(f"Invalid PermissionRequest payload: {exc}", file=sys.stderr)
         return 2
 
-    if payload.get("hook_event_name") != "PermissionRequest":
+    event_name = payload.get("hook_event_name")
+    if event_name is not None and event_name != "PermissionRequest":
+        _emit_empty_hook_output()
         return 0
 
     _append_hook_log("permission-request", payload)
 
+    message = _format_permission_request_message(payload)
+    if message is None:
+        _emit_empty_hook_output()
+        return 0
+
     tmux_service = TmuxService()
-    current_session = tmux_service.get_current_session_name()
+    current_session = _notify_session_for_hook(tmux_service)
     if current_session is None:
+        _emit_empty_hook_output()
         return 0
-
-    notify_flag = tmux_service.get_session_environment(
-        current_session,
-        "CO_AGENT_NOTIFY_ON_FINISH",
-    )
-    if notify_flag != "1":
-        return 0
-
-    tool_input = payload.get("tool_input")
-    if not isinstance(tool_input, dict):
-        return 0
-
-    command = tool_input.get("command")
-    if not isinstance(command, str) or not command.strip():
-        return 0
-
-    description = tool_input.get("description")
-    message = f"승인 요청이 필요합니다.\nCommand: {command.strip()}"
-    if isinstance(description, str) and description.strip():
-        message = f"{message}\nReason: {description.strip()}"
 
     try:
         result = send_to_session(
@@ -206,11 +238,14 @@ def run_codex_permission_request(
         )
     except DiscordSendError as exc:
         print(str(exc), file=sys.stderr)
+        _emit_empty_hook_output()
         return 1
 
     print(
-        f"Sent {result.chunks_sent} message chunk(s) to channel {result.channel_id} for session {result.session_name}."
+        f"Sent {result.chunks_sent} message chunk(s) to channel {result.channel_id} for session {result.session_name}.",
+        file=sys.stderr,
     )
+    _emit_empty_hook_output()
     return 0
 
 
@@ -248,7 +283,7 @@ def main() -> None:
         return
     if args.command == "discord-send":
         raise SystemExit(run_discord_send(args, config=config, registry=registry))
-    if args.command == "codex-notify":
-        raise SystemExit(run_codex_notify(args, config=config, registry=registry))
+    if args.command == "codex-stop":
+        raise SystemExit(run_codex_stop(config=config, registry=registry))
     if args.command == "codex-permission-request":
         raise SystemExit(run_codex_permission_request(config=config, registry=registry))
