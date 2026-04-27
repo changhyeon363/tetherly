@@ -4,7 +4,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
-from co_agent.models import ChannelBinding, utc_now
+from tetherly.models import ChannelBinding, utc_now
 
 
 class SessionRegistryError(RuntimeError):

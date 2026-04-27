@@ -9,7 +9,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from co_agent.config import USER_CONFIG_DIR, USER_ENV_PATH
+from tetherly.config import USER_CONFIG_DIR, USER_ENV_PATH
 
 HOOK_STATUS_MESSAGE_STOP = "sending turn-complete notice to Discord"
 HOOK_STATUS_MESSAGE_PERMISSION = "sending permission request to Discord"
@@ -23,15 +23,15 @@ class HookInstallResult:
     hooks_json_changed: bool
 
 
-def resolve_co_agent_executable() -> str:
-    """Return an absolute path to the `co-agent` executable for use in hook commands."""
-    found = shutil.which("co-agent")
+def resolve_tetherly_executable() -> str:
+    """Return an absolute path to the `tetherly` executable for use in hook commands."""
+    found = shutil.which("tetherly")
     if found:
         return str(Path(found).resolve())
     argv0 = Path(sys.argv[0])
     if argv0.is_absolute() and argv0.exists():
         return str(argv0)
-    return "co-agent"
+    return "tetherly"
 
 
 def write_env_file(
@@ -52,12 +52,12 @@ def write_env_file(
 
     lines: list[str] = [
         f"DISCORD_BOT_TOKEN={token}",
-        f"CO_AGENT_ALLOWED_USER_IDS={','.join(str(uid) for uid in user_ids)}",
+        f"TETHERLY_ALLOWED_USER_IDS={','.join(str(uid) for uid in user_ids)}",
     ]
     if guild_id is not None:
-        lines.append(f"CO_AGENT_ALLOWED_GUILD_IDS={guild_id}")
+        lines.append(f"TETHERLY_ALLOWED_GUILD_IDS={guild_id}")
     if test_guild_id is not None:
-        lines.append(f"CO_AGENT_TEST_GUILD_ID={test_guild_id}")
+        lines.append(f"TETHERLY_TEST_GUILD_ID={test_guild_id}")
     path.write_text("\n".join(lines) + "\n")
     try:
         os.chmod(path, 0o600)
@@ -194,7 +194,7 @@ def install_codex_hooks(*, scope: str, executable: str | None = None) -> HookIns
 
     config_path = codex_dir / "config.toml"
     hooks_path = codex_dir / "hooks.json"
-    exe = executable or resolve_co_agent_executable()
+    exe = executable or resolve_tetherly_executable()
 
     config_changed = _ensure_codex_hooks_flag(config_path)
     hooks_changed = _ensure_codex_hooks_json(hooks_path, exe)
@@ -216,6 +216,6 @@ __all__ = [
     "USER_ENV_PATH",
     "ensure_user_config_dir",
     "install_codex_hooks",
-    "resolve_co_agent_executable",
+    "resolve_tetherly_executable",
     "write_env_file",
 ]

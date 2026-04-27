@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from co_agent.authz import AccessController
+from tetherly.authz import AccessController
 
 
 class AccessControllerTest(unittest.TestCase):
@@ -47,7 +47,7 @@ class AccessControllerTest(unittest.TestCase):
 
         interaction = SimpleNamespace(guild_id=100, user=FakeMember())
 
-        with mock.patch("co_agent.authz.discord.Member", FakeMember):
+        with mock.patch("tetherly.authz.discord.Member", FakeMember):
             self.assertTrue(controller.is_allowed(interaction))
 
     def test_is_allowed_user_supports_message_author(self) -> None:

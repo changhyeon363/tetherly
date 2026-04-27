@@ -5,7 +5,7 @@ import os
 import unittest
 from unittest import mock
 
-from co_agent.main import (
+from tetherly.main import (
     resolve_session_name,
     run_codex_permission_request,
     run_codex_stop,
@@ -20,7 +20,7 @@ class ResolveSessionNameTest(unittest.TestCase):
             "t1",
         )
 
-    @mock.patch.dict(os.environ, {"CO_AGENT_SESSION": "from-env"}, clear=False)
+    @mock.patch.dict(os.environ, {"TETHERLY_SESSION": "from-env"}, clear=False)
     def test_uses_environment_session(self) -> None:
         tmux_service = mock.Mock()
         self.assertEqual(
@@ -60,9 +60,9 @@ class RunCodexStopTest(unittest.TestCase):
         stdout = io.StringIO()
 
         with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
-            "co_agent.main.TmuxService", return_value=tmux_service
+            "tetherly.main.TmuxService", return_value=tmux_service
         ), mock.patch(
-            "co_agent.main.send_to_session", return_value=send_result
+            "tetherly.main.send_to_session", return_value=send_result
         ) as send:
             self.assertEqual(
                 run_codex_stop(config=mock.Mock(), registry=mock.Mock()),
@@ -76,7 +76,7 @@ class RunCodexStopTest(unittest.TestCase):
         payload = '{"hook_event_name":"Stop"}'
         stdout = io.StringIO()
         with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
-            "co_agent.main.TmuxService"
+            "tetherly.main.TmuxService"
         ) as tmux_service_cls:
             self.assertEqual(
                 run_codex_stop(config=mock.Mock(), registry=mock.Mock()),
@@ -93,8 +93,8 @@ class RunCodexStopTest(unittest.TestCase):
         stdout = io.StringIO()
 
         with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
-            "co_agent.main.TmuxService", return_value=tmux_service
-        ), mock.patch("co_agent.main.send_to_session") as send:
+            "tetherly.main.TmuxService", return_value=tmux_service
+        ), mock.patch("tetherly.main.send_to_session") as send:
             self.assertEqual(
                 run_codex_stop(config=mock.Mock(), registry=mock.Mock()),
                 0,
@@ -126,9 +126,9 @@ class RunCodexPermissionRequestTest(unittest.TestCase):
         stdout = io.StringIO()
 
         with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
-            "co_agent.main.TmuxService", return_value=tmux_service
+            "tetherly.main.TmuxService", return_value=tmux_service
         ), mock.patch(
-            "co_agent.main.send_to_session", return_value=send_result
+            "tetherly.main.send_to_session", return_value=send_result
         ) as send:
             self.assertEqual(
                 run_codex_permission_request(
@@ -159,9 +159,9 @@ class RunCodexPermissionRequestTest(unittest.TestCase):
         stdout = io.StringIO()
 
         with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
-            "co_agent.main.TmuxService", return_value=tmux_service
+            "tetherly.main.TmuxService", return_value=tmux_service
         ), mock.patch(
-            "co_agent.main.send_to_session", return_value=send_result
+            "tetherly.main.send_to_session", return_value=send_result
         ) as send:
             self.assertEqual(
                 run_codex_permission_request(
@@ -180,7 +180,7 @@ class RunCodexPermissionRequestTest(unittest.TestCase):
         payload = '{"hook_event_name":"Other","tool_input":{"command":"echo hi"}}'
         stdout = io.StringIO()
         with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
-            "co_agent.main.TmuxService"
+            "tetherly.main.TmuxService"
         ) as tmux_service_cls:
             self.assertEqual(
                 run_codex_permission_request(

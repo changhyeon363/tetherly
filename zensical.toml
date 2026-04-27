@@ -1,14 +1,14 @@
-# Zensical configuration for co-agent docs.
+# Zensical configuration for tetherly docs.
 # Reference: https://zensical.org/docs/
 
 [project]
-site_name = "co-agent"
+site_name = "tetherly"
 site_description = "Discord channel ↔ tmux session bridge for agent-driven workflows."
 site_author = "changhyeon363"
 # Update once the GitHub Pages URL is known:
-# site_url = "https://changhyeon363.github.io/co-agent/"
+# site_url = "https://changhyeon363.github.io/tetherly/"
 
-copyright = "Copyright &copy; 2026 co-agent contributors"
+copyright = "Copyright &copy; 2026 tetherly contributors"
 
 # Navigation is auto-derived from the docs/ directory tree.
 # Override here if the auto layout becomes unsatisfactory.

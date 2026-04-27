@@ -1,7 +1,11 @@
 .env
+.tetherly/
 .co-agent/
 .codex/
 .DS_Store
+
+# Local-only assets (logo candidates, etc.) not yet wired into the docs site
+docs/assets/
 .venv/
 __pycache__/
 *.pyc

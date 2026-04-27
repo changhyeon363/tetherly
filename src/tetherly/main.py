@@ -7,17 +7,17 @@ import os
 from pathlib import Path
 import sys
 
-from co_agent.authz import AccessController
-from co_agent.config import Config, USER_ENV_PATH, load_dotenv
-from co_agent.discord_bot import CoAgentBot
-from co_agent.discord_sender import DiscordSendError, send_to_session
-from co_agent.session_registry import SessionRegistry
-from co_agent.setup import (
+from tetherly.authz import AccessController
+from tetherly.config import Config, USER_ENV_PATH, load_dotenv
+from tetherly.discord_bot import TetherlyBot
+from tetherly.discord_sender import DiscordSendError, send_to_session
+from tetherly.session_registry import SessionRegistry
+from tetherly.setup import (
     ensure_user_config_dir,
     install_codex_hooks,
     write_env_file,
 )
-from co_agent.tmux_service import TmuxService
+from tetherly.tmux_service import TmuxService
 
 
 def _append_hook_log(name: str, payload: object) -> None:
@@ -31,13 +31,13 @@ def _append_hook_log(name: str, payload: object) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="co-agent")
+    parser = argparse.ArgumentParser(prog="tetherly")
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("run-bot", help="run the Discord bot")
 
     init_parser = subparsers.add_parser(
-        "init", help="interactive setup: write ~/.co-agent/.env and (optionally) Codex hooks"
+        "init", help="interactive setup: write ~/.tetherly/.env and (optionally) Codex hooks"
     )
     init_parser.add_argument(
         "--force",
@@ -144,8 +144,8 @@ def _prompt_choice(message: str, choices: dict[str, str], default: str) -> str:
 
 
 def run_init(args: argparse.Namespace) -> int:
-    print("co-agent — initial setup\n")
-    print("This creates ~/.co-agent/.env and (optionally) installs Codex hooks.\n")
+    print("tetherly — initial setup\n")
+    print("This creates ~/.tetherly/.env and (optionally) installs Codex hooks.\n")
 
     if USER_ENV_PATH.exists() and not args.force:
         print(f"⚠  {USER_ENV_PATH} already exists.")
@@ -181,7 +181,7 @@ def run_init(args: argparse.Namespace) -> int:
         "Where should Codex hooks be installed?",
         {
             "g": "Global  — once at ~/.codex/, fires in every project",
-            "p": "Project — install per project later via `co-agent install-hooks`",
+            "p": "Project — install per project later via `tetherly install-hooks`",
             "s": "Skip    — don't touch Codex hooks now",
         },
         default="g",
@@ -210,10 +210,10 @@ def run_init(args: argparse.Namespace) -> int:
             print(f"· {result.hooks_json_path} already up to date")
 
     print("\nNext steps:")
-    print("  1. Start the bot:        co-agent")
+    print("  1. Start the bot:        tetherly")
     print("  2. In a Discord channel: /bind session:<your-tmux-session>")
     if scope == "p":
-        print("  3. In each project:      co-agent install-hooks")
+        print("  3. In each project:      tetherly install-hooks")
     return 0
 
 
@@ -241,7 +241,7 @@ def run_bot(config: Config, registry: SessionRegistry) -> None:
         allowed_user_ids=config.allowed_user_ids,
     )
 
-    bot = CoAgentBot(
+    bot = TetherlyBot(
         config=config,
         registry=registry,
         tmux_service=tmux_service,
@@ -294,7 +294,7 @@ def _notify_session_for_hook(tmux_service: TmuxService) -> str | None:
         return None
     notify_flag = tmux_service.get_session_environment(
         current_session,
-        "CO_AGENT_NOTIFY_ON_FINISH",
+        "TETHERLY_NOTIFY_ON_FINISH",
     )
     if notify_flag != "1":
         return None
@@ -435,7 +435,7 @@ def resolve_session_name(
 ) -> str | None:
     if session_arg:
         return session_arg
-    env_session = os.environ.get("CO_AGENT_SESSION")
+    env_session = os.environ.get("TETHERLY_SESSION")
     if env_session:
         return env_session
     current_session = tmux_service.get_current_session_name()
@@ -443,7 +443,7 @@ def resolve_session_name(
         return None
     tmux_env_session = tmux_service.get_session_environment(
         current_session,
-        "CO_AGENT_SESSION",
+        "TETHERLY_SESSION",
     )
     if tmux_env_session:
         return tmux_env_session

@@ -6,8 +6,8 @@ from unittest import mock
 
 import discord
 
-from co_agent.discord_bot import _extract_auto_send_text
-from co_agent.discord_bot import CoAgentBot
+from tetherly.discord_bot import _extract_auto_send_text
+from tetherly.discord_bot import TetherlyBot
 
 
 class ExtractAutoSendTextTest(unittest.TestCase):
@@ -51,13 +51,13 @@ class ExtractAutoSendTextTest(unittest.TestCase):
 
         message = self._message(channel=FakeThread())
 
-        with mock.patch("co_agent.discord_bot.discord.Thread", FakeThread):
+        with mock.patch("tetherly.discord_bot.discord.Thread", FakeThread):
             self.assertIsNone(_extract_auto_send_text(message))
 
 
 class OnMessageTest(unittest.IsolatedAsyncioTestCase):
     async def test_ignores_dm_message_without_guild(self) -> None:
-        bot = CoAgentBot(
+        bot = TetherlyBot(
             config=mock.Mock(test_guild_id=None),
             registry=mock.Mock(),
             tmux_service=mock.Mock(),

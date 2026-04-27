@@ -5,10 +5,10 @@ import logging
 import discord
 from discord import app_commands
 
-from co_agent.authz import AccessController
-from co_agent.config import Config
-from co_agent.session_registry import SessionRegistry, SessionRegistryError
-from co_agent.tmux_service import TmuxError, TmuxService, normalize_session_name
+from tetherly.authz import AccessController
+from tetherly.config import Config
+from tetherly.session_registry import SessionRegistry, SessionRegistryError
+from tetherly.tmux_service import TmuxError, TmuxService, normalize_session_name
 
 LOGGER = logging.getLogger(__name__)
 AUTO_SEND_MAX_LENGTH = 4000
@@ -36,7 +36,7 @@ def _extract_auto_send_text(message: discord.Message) -> str | None:
     return content
 
 
-class CoAgentBot(discord.Client):
+class TetherlyBot(discord.Client):
     def __init__(
         self,
         *,
@@ -110,12 +110,12 @@ class CoAgentBot(discord.Client):
             created = self.tmux_service.ensure_session(session_name)
             self.tmux_service.set_session_environment(
                 session_name,
-                "CO_AGENT_SESSION",
+                "TETHERLY_SESSION",
                 session_name,
             )
             self.tmux_service.set_session_environment(
                 session_name,
-                "CO_AGENT_NOTIFY_ON_FINISH",
+                "TETHERLY_NOTIFY_ON_FINISH",
                 "1",
             )
             try:

@@ -1,4 +1,4 @@
-# co-agent
+# tetherly
 
 Discord channel ↔ tmux session bridge.
 
@@ -12,8 +12,8 @@ Discord channel ↔ tmux session bridge.
 - `/key key:<Enter|Escape|Ctrl-C|Ctrl-D|Tab|Up|Down|Left|Right>`: send a special key into the bound tmux session
 - `/tail lines:<n>`: fetch recent tmux output
 - `/status`: inspect the current binding and tmux session status
-- `co-agent discord-send --message <text>`: let an agent inside a bound tmux session send a reply back to Discord
-- `co-agent codex-stop` / `co-agent codex-permission-request`: Codex hook handlers that forward messages to the bound Discord channel
+- `tetherly discord-send --message <text>`: let an agent inside a bound tmux session send a reply back to Discord
+- `tetherly codex-stop` / `tetherly codex-permission-request`: Codex hook handlers that forward messages to the bound Discord channel
 
 ## Requirements
 
@@ -26,23 +26,23 @@ Discord channel ↔ tmux session bridge.
 Install once on your machine:
 
 ```bash
-pipx install -e /path/to/co-agent
-co-agent init
+pipx install -e /path/to/tetherly
+tetherly init
 ```
 
-`co-agent init` is interactive. It writes `~/.co-agent/.env` and asks where to install Codex hooks:
+`tetherly init` is interactive. It writes `~/.tetherly/.env` and asks where to install Codex hooks:
 
 - **Global** — writes `~/.codex/hooks.json` once. Hooks fire in every project automatically; nothing per-project.
-- **Project** — skip global hooks and run `co-agent install-hooks` inside each project where you want them.
+- **Project** — skip global hooks and run `tetherly install-hooks` inside each project where you want them.
 - **Skip** — don't touch Codex hooks.
 
 Then start the bot:
 
 ```bash
-co-agent
+tetherly
 ```
 
-That's it. State lives at `~/.co-agent/state.json` so a single bot can serve every project.
+That's it. State lives at `~/.tetherly/state.json` so a single bot can serve every project.
 
 ### Per-project usage
 
@@ -59,7 +59,7 @@ If you chose **Project** mode during init, also run once per project:
 
 ```bash
 cd <project>
-co-agent install-hooks
+tetherly install-hooks
 ```
 
 `install-hooks` accepts `--global` to (re)install user-level hooks instead.
@@ -67,32 +67,32 @@ co-agent install-hooks
 ### Sending from inside a session
 
 ```bash
-co-agent discord-send --message "작업 끝났습니다"
-cat result.txt | co-agent discord-send --stdin
-co-agent discord-send --session t1 --message "..."   # explicit session
+tetherly discord-send --message "작업 끝났습니다"
+cat result.txt | tetherly discord-send --stdin
+tetherly discord-send --session t1 --message "..."   # explicit session
 ```
 
 ## Configuration
 
-`co-agent init` writes everything you need. Advanced overrides live in `~/.co-agent/.env` or shell env:
+`tetherly init` writes everything you need. Advanced overrides live in `~/.tetherly/.env` or shell env:
 
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `DISCORD_BOT_TOKEN` | (required) | Bot token |
-| `CO_AGENT_ALLOWED_USER_IDS` | (required) | Comma-separated user IDs |
-| `CO_AGENT_ALLOWED_GUILD_IDS` | — | Restrict commands to these guilds |
-| `CO_AGENT_ALLOWED_ROLE_IDS` | — | Allow members holding any of these roles |
-| `CO_AGENT_TEST_GUILD_ID` | — | Dev guild for instant slash-command sync |
-| `CO_AGENT_STATE_PATH` | `~/.co-agent/state.json` | Where bindings are persisted |
-| `CO_AGENT_DEFAULT_TAIL_LINES` | `40` | Default `/tail` line count |
-| `CO_AGENT_MAX_TAIL_LINES` | `200` | Cap for `/tail` |
-| `CO_AGENT_LOG_LEVEL` | `INFO` | Logger verbosity |
+| `TETHERLY_ALLOWED_USER_IDS` | (required) | Comma-separated user IDs |
+| `TETHERLY_ALLOWED_GUILD_IDS` | — | Restrict commands to these guilds |
+| `TETHERLY_ALLOWED_ROLE_IDS` | — | Allow members holding any of these roles |
+| `TETHERLY_TEST_GUILD_ID` | — | Dev guild for instant slash-command sync |
+| `TETHERLY_STATE_PATH` | `~/.tetherly/state.json` | Where bindings are persisted |
+| `TETHERLY_DEFAULT_TAIL_LINES` | `40` | Default `/tail` line count |
+| `TETHERLY_MAX_TAIL_LINES` | `200` | Cap for `/tail` |
+| `TETHERLY_LOG_LEVEL` | `INFO` | Logger verbosity |
 
-A `.env` in the current working directory still overrides `~/.co-agent/.env`.
+A `.env` in the current working directory still overrides `~/.tetherly/.env`.
 
 ## Codex hooks
 
-Both hooks only fire when the active tmux session has `CO_AGENT_NOTIFY_ON_FINISH=1` — `/bind` sets that flag automatically, so projects without a binding stay silent even when global hooks are installed.
+Both hooks only fire when the active tmux session has `TETHERLY_NOTIFY_ON_FINISH=1` — `/bind` sets that flag automatically, so projects without a binding stay silent even when global hooks are installed.
 
-- `Stop` → `co-agent codex-stop` forwards `last_assistant_message` to the bound channel.
-- `PermissionRequest` → `co-agent codex-permission-request` forwards the tool/command/reason. It does not return an `allow`/`deny` decision, so Codex's normal approval prompt still appears.
+- `Stop` → `tetherly codex-stop` forwards `last_assistant_message` to the bound channel.
+- `PermissionRequest` → `tetherly codex-permission-request` forwards the tool/command/reason. It does not return an `allow`/`deny` decision, so Codex's normal approval prompt still appears.

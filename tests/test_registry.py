@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from co_agent.session_registry import SessionRegistry
+from tetherly.session_registry import SessionRegistry
 
 
 class SessionRegistryTest(unittest.TestCase):

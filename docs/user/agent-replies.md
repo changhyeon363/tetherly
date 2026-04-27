@@ -7,13 +7,13 @@ Use this project to send replies back to the Discord channel bound to the curren
 When you are running inside a bound tmux session, send a Discord reply like this:
 
 ```bash
-co-agent discord-send --message "<text>"
+tetherly discord-send --message "<text>"
 ```
 
 For longer output, send from standard input:
 
 ```bash
-cat result.txt | co-agent discord-send --stdin
+cat result.txt | tetherly discord-send --stdin
 ```
 
 ## When to use it
@@ -29,23 +29,23 @@ Use `discord-send` when you need to:
 
 You usually do not need to pass a session name.
 
-`co-agent discord-send` resolves the target session in this order:
+`tetherly discord-send` resolves the target session in this order:
 
 1. `--session <name>` if explicitly provided
-2. `CO_AGENT_SESSION` from the process environment
-3. `CO_AGENT_SESSION` stored in the current tmux session
+2. `TETHERLY_SESSION` from the process environment
+3. `TETHERLY_SESSION` stored in the current tmux session
 4. the current tmux session name as a fallback
 
 That means the normal form inside tmux is:
 
 ```bash
-co-agent discord-send --message "<text>"
+tetherly discord-send --message "<text>"
 ```
 
 If you must send from outside tmux, use:
 
 ```bash
-co-agent discord-send --session <session> --message "<text>"
+tetherly discord-send --session <session> --message "<text>"
 ```
 
 ## Requirements
@@ -56,8 +56,8 @@ co-agent discord-send --session <session> --message "<text>"
 /bind session:<name>
 ```
 
-- `~/.co-agent/.env` (or a CWD `.env` for an override) must contain a valid `DISCORD_BOT_TOKEN`. `co-agent init` writes this file for you.
-- The bound session must be present in `~/.co-agent/state.json` (override with `CO_AGENT_STATE_PATH`).
+- `~/.tetherly/.env` (or a CWD `.env` for an override) must contain a valid `DISCORD_BOT_TOKEN`. `tetherly init` writes this file for you.
+- The bound session must be present in `~/.tetherly/state.json` (override with `TETHERLY_STATE_PATH`).
 
 ## Failure checks
 
@@ -71,9 +71,9 @@ If sending fails:
 ## Examples
 
 ```bash
-co-agent discord-send --message "작업이 끝났습니다."
+tetherly discord-send --message "작업이 끝났습니다."
 ```
 
 ```bash
-printf "테스트 통과\n배포 준비 완료\n" | co-agent discord-send --stdin
+printf "테스트 통과\n배포 준비 완료\n" | tetherly discord-send --stdin
 ```

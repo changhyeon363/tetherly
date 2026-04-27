@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from co_agent.config import Config
-from co_agent.session_registry import SessionRegistry
+from tetherly.config import Config
+from tetherly.session_registry import SessionRegistry
 
 DISCORD_MESSAGE_LIMIT = 2000
 

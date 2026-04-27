@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-USER_CONFIG_DIR = Path.home() / ".co-agent"
+USER_CONFIG_DIR = Path.home() / ".tetherly"
 USER_ENV_PATH = USER_CONFIG_DIR / ".env"
 USER_STATE_PATH = USER_CONFIG_DIR / "state.json"
 
@@ -61,19 +61,19 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         token = os.environ["DISCORD_BOT_TOKEN"].strip()
-        state_path = Path(os.environ.get("CO_AGENT_STATE_PATH", str(USER_STATE_PATH)))
+        state_path = Path(os.environ.get("TETHERLY_STATE_PATH", str(USER_STATE_PATH)))
         return cls(
             discord_bot_token=token,
             state_path=state_path,
-            allowed_guild_ids=_parse_id_set(os.environ.get("CO_AGENT_ALLOWED_GUILD_IDS")),
-            allowed_role_ids=_parse_id_set(os.environ.get("CO_AGENT_ALLOWED_ROLE_IDS")),
-            allowed_user_ids=_parse_id_set(os.environ.get("CO_AGENT_ALLOWED_USER_IDS")),
-            test_guild_id=int(os.environ["CO_AGENT_TEST_GUILD_ID"])
-            if os.environ.get("CO_AGENT_TEST_GUILD_ID")
+            allowed_guild_ids=_parse_id_set(os.environ.get("TETHERLY_ALLOWED_GUILD_IDS")),
+            allowed_role_ids=_parse_id_set(os.environ.get("TETHERLY_ALLOWED_ROLE_IDS")),
+            allowed_user_ids=_parse_id_set(os.environ.get("TETHERLY_ALLOWED_USER_IDS")),
+            test_guild_id=int(os.environ["TETHERLY_TEST_GUILD_ID"])
+            if os.environ.get("TETHERLY_TEST_GUILD_ID")
             else None,
-            default_tail_lines=int(os.environ.get("CO_AGENT_DEFAULT_TAIL_LINES", "40")),
-            max_tail_lines=int(os.environ.get("CO_AGENT_MAX_TAIL_LINES", "200")),
-            log_level=os.environ.get("CO_AGENT_LOG_LEVEL", "INFO").upper(),
+            default_tail_lines=int(os.environ.get("TETHERLY_DEFAULT_TAIL_LINES", "40")),
+            max_tail_lines=int(os.environ.get("TETHERLY_MAX_TAIL_LINES", "200")),
+            log_level=os.environ.get("TETHERLY_LOG_LEVEL", "INFO").upper(),
         )
 
     def configure_logging(self) -> None:

@@ -2,7 +2,7 @@
 icon: lucide/cable
 ---
 
-# co-agent
+# tetherly
 
 A Discord channel ↔ tmux session bridge for agent-driven workflows.
 
@@ -11,7 +11,7 @@ One bot, many tmux sessions, many Discord channels. `/bind` a channel to a sessi
 ## Start here
 
 - **[Setup and usage](user/usage.md)** — operating model, install modes, command semantics, troubleshooting.
-- **[Agent replies](user/agent-replies.md)** — how `co-agent discord-send` works from inside a bound tmux session.
+- **[Agent replies](user/agent-replies.md)** — how `tetherly discord-send` works from inside a bound tmux session.
 - **[Security](user/security.md)** — restricting which Discord servers and users can drive the bot.
 
 ## For contributors
@@ -20,4 +20,4 @@ One bot, many tmux sessions, many Discord channels. `/bind` a channel to a sessi
 
 ## Source
 
-- Repository: [github.com/changhyeon363/co-agent](https://github.com/changhyeon363/co-agent)
+- Repository: [github.com/changhyeon363/tetherly](https://github.com/changhyeon363/tetherly)

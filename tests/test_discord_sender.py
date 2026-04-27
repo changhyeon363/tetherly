@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from co_agent.discord_sender import DiscordSendError, split_message
-from co_agent.session_registry import SessionRegistry, SessionRegistryError
+from tetherly.discord_sender import DiscordSendError, split_message
+from tetherly.session_registry import SessionRegistry, SessionRegistryError
 
 
 class DiscordSenderTest(unittest.TestCase):
