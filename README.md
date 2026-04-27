@@ -30,7 +30,7 @@ Discord channel ↔ tmux session bridge.
 Install once on your machine:
 
 ```bash
-pipx install -e /path/to/tetherly
+pipx install tetherly
 tetherly init
 ```
 
