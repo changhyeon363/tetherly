@@ -31,6 +31,7 @@ Install once on your machine:
 
 ```bash
 pipx install tetherly
+# or: uv tool install tetherly
 tetherly init
 ```
 

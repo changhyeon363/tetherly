@@ -18,6 +18,7 @@ There is no need to run a separate bot per project. Each project simply binds it
 
 ```bash
 pipx install tetherly
+# or: uv tool install tetherly
 tetherly init
 ```
 

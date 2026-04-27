@@ -21,7 +21,11 @@ You'll also need your **Discord user ID** (right-click your name with Developer 
 
 ```bash
 pipx install tetherly
+# or, with uv:
+uv tool install tetherly
 ```
+
+Either way you get an isolated environment with a `tetherly` CLI on your `PATH`.
 
 ## 3. Initialize
 
