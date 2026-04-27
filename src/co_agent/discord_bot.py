@@ -261,13 +261,19 @@ class CoAgentBot(discord.Client):
                 )
                 return
             tmux_status = self.tmux_service.get_status(binding.session_name)
+            if tmux_status.exists:
+                headline = f"🟢 Active — tmux session `{binding.session_name}` is alive"
+            else:
+                headline = (
+                    f"🔴 tmux session `{binding.session_name}` is GONE — "
+                    "run `/bind session:<name>` to reconnect"
+                )
             await interaction.response.send_message(
                 "\n".join(
                     [
+                        headline,
                         f"Channel: <#{binding.channel_id}>",
-                        f"Session: `{binding.session_name}`",
                         f"Auto-send: `{binding.auto_send}`",
-                        f"Tmux exists: `{tmux_status.exists}`",
                         f"Bound by: <@{binding.bound_by}>",
                         f"Bound at: `{binding.bound_at}`",
                         f"Last used at: `{binding.last_used_at}`",
