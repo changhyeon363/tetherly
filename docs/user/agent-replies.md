@@ -56,8 +56,8 @@ co-agent discord-send --session <session> --message "<text>"
 /bind session:<name>
 ```
 
-- The local project `.env` must contain a valid `DISCORD_BOT_TOKEN`.
-- The bound session must be present in `.co-agent/state.json`.
+- `~/.co-agent/.env` (or a CWD `.env` for an override) must contain a valid `DISCORD_BOT_TOKEN`. `co-agent init` writes this file for you.
+- The bound session must be present in `~/.co-agent/state.json` (override with `CO_AGENT_STATE_PATH`).
 
 ## Failure checks
 
