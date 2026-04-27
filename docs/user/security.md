@@ -1,3 +1,7 @@
+---
+icon: lucide/shield
+---
+
 # Discord Security Notes
 
 이 프로젝트의 Discord 봇은 아래 3단계로 제한됩니다.

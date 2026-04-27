@@ -1,3 +1,7 @@
+---
+icon: lucide/book-open
+---
+
 # tetherly — Usage Guide
 
 This document explains the operating model and the parts that aren't obvious from a quick `--help`.

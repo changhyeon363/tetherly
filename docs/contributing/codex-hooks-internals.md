@@ -1,3 +1,7 @@
+---
+icon: lucide/webhook
+---
+
 # Codex Hooks — Internals
 
 Notes for contributors working on the `codex-stop` and `codex-permission-request` handlers. End-user setup and gating semantics live in [user/usage.md](../user/usage.md).

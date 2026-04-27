@@ -9,8 +9,19 @@ site_url = "https://changhyeon363.github.io/tetherly/"
 
 copyright = "Copyright &copy; 2026 tetherly contributors"
 
-# Navigation is auto-derived from the docs/ directory tree.
-# Override here if the auto layout becomes unsatisfactory.
+# Explicit nav order — most-viewed pages first.
+nav = [
+    { "Home" = "index.md" },
+    { "User Guide" = [
+        { "Quick Start" = "user/quickstart.md" },
+        { "Setup and Usage" = "user/usage.md" },
+        { "Agent Replies" = "user/agent-replies.md" },
+        { "Security" = "user/security.md" },
+    ] },
+    { "Contributing" = [
+        { "Codex Hooks Internals" = "contributing/codex-hooks-internals.md" },
+    ] },
+]
 
 # ---------------------------------------------------------------------------
 # Theme

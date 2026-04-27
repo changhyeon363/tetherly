@@ -1,3 +1,7 @@
+---
+icon: lucide/message-square-reply
+---
+
 # Agent Discord Reply Guide
 
 Use this project to send replies back to the Discord channel bound to the current tmux session.

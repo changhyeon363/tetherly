@@ -1,3 +1,7 @@
+---
+icon: lucide/rocket
+---
+
 # Quick Start
 
 From zero to driving a tmux session from Discord in ~5 minutes.
