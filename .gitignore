@@ -1,5 +1,7 @@
 .env
 .co-agent/
+.codex/logs/
+.DS_Store
 .venv/
 __pycache__/
 *.pyc
