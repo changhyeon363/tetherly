@@ -8,8 +8,17 @@ version = "0.1.0"
 description = "Discord to tmux session bridge for agent-driven workflows."
 readme = "README.md"
 requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+  {name = "changhyeon363", email = "changhyeon363@gmail.com"},
+]
 dependencies = [
   "discord.py>=2.5,<3",
+]
+
+[project.optional-dependencies]
+docs = [
+  "zensical>=0.0.37,<1",
 ]
 
 [project.scripts]

@@ -1,6 +1,6 @@
 .env
 .co-agent/
-.codex/logs/
+.codex/
 .DS_Store
 .venv/
 __pycache__/
@@ -11,3 +11,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# Zensical docs build output
+site/
+.zensical/
