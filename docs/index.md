@@ -1,6 +1,10 @@
 ---
-icon: lucide/cable
+icon: lucide/waypoints
 ---
+
+<p align="center">
+  <img src="assets/images/tetherly-icon.png" alt="tetherly icon" width="96" height="96">
+</p>
 
 # tetherly
 

@@ -1,11 +1,12 @@
 .env
 .tetherly/
-.co-agent/
 .codex/
 .DS_Store
 
-# Local-only assets (logo candidates, etc.) not yet wired into the docs site
-docs/assets/
+# Local-only logo candidates. Keep the official docs assets tracked.
+docs/assets/images/*.png
+!docs/assets/images/tetherly-icon.png
+!docs/assets/images/favicon.png
 .venv/
 __pycache__/
 *.pyc

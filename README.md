@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/images/tetherly-icon.png" alt="tetherly icon" width="96" height="96">
+</p>
+
 # tetherly
 
 Discord channel ↔ tmux session bridge.
