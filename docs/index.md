@@ -14,6 +14,7 @@ One bot, many tmux sessions, many Discord channels. `/bind` a channel to a sessi
 
 ## Start here
 
+- **[Quick Start](user/quickstart.md)** — install, create a bot, bind your first channel in ~5 minutes.
 - **[Setup and usage](user/usage.md)** — operating model, install modes, command semantics, troubleshooting.
 - **[Agent replies](user/agent-replies.md)** — how `tetherly discord-send` works from inside a bound tmux session.
 - **[Security](user/security.md)** — restricting which Discord servers and users can drive the bot.

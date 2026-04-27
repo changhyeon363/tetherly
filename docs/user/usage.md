@@ -17,7 +17,7 @@ There is no need to run a separate bot per project. Each project simply binds it
 ### One-time, machine-wide
 
 ```bash
-pipx install -e /path/to/tetherly
+pipx install tetherly
 tetherly init
 ```
 
