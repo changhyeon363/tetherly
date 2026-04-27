@@ -6,11 +6,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-def load_dotenv(path: str = ".env") -> None:
-    dotenv_path = Path(path)
-    if not dotenv_path.exists():
+USER_CONFIG_DIR = Path.home() / ".co-agent"
+USER_ENV_PATH = USER_CONFIG_DIR / ".env"
+USER_STATE_PATH = USER_CONFIG_DIR / "state.json"
+
+
+def _load_env_file(path: Path) -> None:
+    if not path.exists():
         return
-    for raw_line in dotenv_path.read_text().splitlines():
+    for raw_line in path.read_text().splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
@@ -22,6 +26,11 @@ def load_dotenv(path: str = ".env") -> None:
         key = key.strip()
         value = value.strip().strip("'").strip('"')
         os.environ.setdefault(key, value)
+
+
+def load_dotenv(path: str = ".env") -> None:
+    _load_env_file(Path(path))
+    _load_env_file(USER_ENV_PATH)
 
 
 def _parse_id_set(raw: str | None) -> set[int]:
@@ -52,7 +61,7 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         token = os.environ["DISCORD_BOT_TOKEN"].strip()
-        state_path = Path(os.environ.get("CO_AGENT_STATE_PATH", ".co-agent/state.json"))
+        state_path = Path(os.environ.get("CO_AGENT_STATE_PATH", str(USER_STATE_PATH)))
         return cls(
             discord_bot_token=token,
             state_path=state_path,
