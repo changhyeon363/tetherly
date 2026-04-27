@@ -7,6 +7,7 @@ Discord channel to tmux session bridge.
 - `/bind session:<name>`: bind the current Discord channel to a tmux session
 - `/config auto_send:<true|false>`: enable or disable plain-text auto-send for the current bound channel
 - `/send text:<message>`: send text plus Enter into the bound tmux session
+- `/key key:<Enter|Escape|Ctrl-C|Ctrl-D|Tab|Up|Down|Left|Right>`: send a special key into the bound tmux session
 - `/tail lines:<n>`: fetch recent tmux output
 - `/status`: inspect the current binding and tmux session status
 - `co-agent discord-send --message <text>`: let an agent inside a bound tmux session send a reply back to Discord
@@ -55,6 +56,13 @@ Run:
 ```bash
 co-agent
 ```
+
+Recommended Discord workflow:
+
+1. In the target Discord channel, run `/bind session:<name>`.
+2. Run `/config auto_send:true`.
+3. Type plain messages directly in the channel to send them to the tmux session with Enter.
+4. Use `/key` for interactive controls like Escape, Ctrl-C, and arrow keys.
 
 Send a Discord message from a local agent process running inside a bound tmux session:
 

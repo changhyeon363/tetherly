@@ -182,6 +182,45 @@ class CoAgentBot(discord.Client):
                 ephemeral=True,
             )
 
+        @self.tree.command(name="key", description="Send a special key into the bound tmux session.")
+        @app_commands.describe(key="special key to send")
+        @app_commands.choices(
+            key=[
+                app_commands.Choice(name="Enter", value="enter"),
+                app_commands.Choice(name="Escape", value="esc"),
+                app_commands.Choice(name="Ctrl-C", value="ctrl-c"),
+                app_commands.Choice(name="Ctrl-D", value="ctrl-d"),
+                app_commands.Choice(name="Tab", value="tab"),
+                app_commands.Choice(name="Up", value="up"),
+                app_commands.Choice(name="Down", value="down"),
+                app_commands.Choice(name="Left", value="left"),
+                app_commands.Choice(name="Right", value="right"),
+            ]
+        )
+        async def key(interaction: discord.Interaction, key: app_commands.Choice[str]) -> None:
+            if not await self.access_controller.assert_allowed(interaction):
+                return
+            binding = self.registry.get(interaction.channel_id)
+            if binding is None:
+                await interaction.response.send_message(
+                    "This channel is not bound. Run `/bind session:<name>` first.",
+                    ephemeral=True,
+                )
+                return
+            try:
+                self.tmux_service.send_key(binding.session_name, key.value)
+            except TmuxError as exc:
+                await interaction.response.send_message(
+                    f"Failed to send `{key.name}` to `{binding.session_name}`: {exc}",
+                    ephemeral=True,
+                )
+                return
+            self.registry.touch(interaction.channel_id)
+            await interaction.response.send_message(
+                f"Sent `{key.name}` to `{binding.session_name}`.",
+                ephemeral=True,
+            )
+
         @self.tree.command(name="tail", description="Show recent output from the bound tmux session.")
         @app_commands.describe(lines="number of lines to fetch")
         async def tail(interaction: discord.Interaction, lines: int | None = None) -> None:

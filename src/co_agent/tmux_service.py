@@ -27,6 +27,22 @@ class SessionStatus:
 
 
 class TmuxService:
+    KEY_ALIASES = {
+        "enter": "Enter",
+        "return": "Enter",
+        "esc": "Escape",
+        "escape": "Escape",
+        "ctrl-c": "C-c",
+        "c-c": "C-c",
+        "ctrl-d": "C-d",
+        "c-d": "C-d",
+        "tab": "Tab",
+        "up": "Up",
+        "down": "Down",
+        "left": "Left",
+        "right": "Right",
+    }
+
     def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
         proc = subprocess.run(
             ["tmux", *args],
@@ -100,6 +116,14 @@ class TmuxService:
         self._run("send-keys", "-t", session_name, text)
         if press_enter:
             self._run("send-keys", "-t", session_name, "Enter")
+
+    def send_key(self, session_name: str, key: str) -> None:
+        if not self.session_exists(session_name):
+            raise TmuxError(f"session {session_name!r} does not exist")
+        normalized = self.KEY_ALIASES.get(key.strip().lower())
+        if normalized is None:
+            raise TmuxError(f"unsupported key {key!r}")
+        self._run("send-keys", "-t", session_name, normalized)
 
     def capture_tail(self, session_name: str, lines: int) -> str:
         if not self.session_exists(session_name):
