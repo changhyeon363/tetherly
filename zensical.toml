@@ -5,8 +5,7 @@
 site_name = "tetherly"
 site_description = "Discord channel ↔ tmux session bridge for agent-driven workflows."
 site_author = "changhyeon363"
-# Update once the GitHub Pages URL is known:
-# site_url = "https://changhyeon363.github.io/tetherly/"
+site_url = "https://changhyeon363.github.io/tetherly/"
 
 copyright = "Copyright &copy; 2026 tetherly contributors"
 
@@ -18,6 +17,8 @@ copyright = "Copyright &copy; 2026 tetherly contributors"
 # ---------------------------------------------------------------------------
 [project.theme]
 language = "en"
+favicon = "assets/images/favicon.png"
+logo = "assets/images/tetherly-icon.png"
 
 features = [
     "announce.dismiss",
