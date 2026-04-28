@@ -4,7 +4,17 @@ icon: lucide/package
 
 # Releasing
 
-Tetherly's release flow is one command: push a `vX.Y.Z` git tag. The `Publish` workflow handles PyPI upload **and** GitHub Release creation from there. PyPI auth uses [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC), so there is no API token to rotate.
+Tetherly has three things that get "deployed", each driven by a different trigger. Knowing which is which keeps the day-to-day mental model simple.
+
+| Output | Trigger | Workflow |
+| --- | --- | --- |
+| **Docs site** ([changhyeon363.github.io/tetherly](https://changhyeon363.github.io/tetherly/)) | Push to `main` that touches `docs/**` or `zensical.toml` | [`.github/workflows/docs.yml`](https://github.com/changhyeon363/tetherly/blob/main/.github/workflows/docs.yml) |
+| **PyPI package** | Push of a `v*` tag | [`.github/workflows/publish.yml`](https://github.com/changhyeon363/tetherly/blob/main/.github/workflows/publish.yml) (job: `publish`) |
+| **GitHub Release** | Push of a `v*` tag | [`.github/workflows/publish.yml`](https://github.com/changhyeon363/tetherly/blob/main/.github/workflows/publish.yml) (job: `github-release`) |
+
+So docs ship on every merge to `main`, and code releases ship on every tag. Nothing is published manually.
+
+The rest of this page is about the tag flow — that's the only one with a non-trivial procedure. Auth uses [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC), so there is no API token to rotate.
 
 ## Cutting a release
 
