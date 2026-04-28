@@ -4,7 +4,6 @@ import json
 import os
 import re
 import shutil
-import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,14 +23,26 @@ class HookInstallResult:
 
 
 def resolve_tetherly_executable() -> str:
-    """Return an absolute path to the `tetherly` executable for use in hook commands."""
-    found = shutil.which("tetherly")
-    if found:
-        return str(Path(found).resolve())
-    argv0 = Path(sys.argv[0])
-    if argv0.is_absolute() and argv0.exists():
-        return str(argv0)
+    """Return the `tetherly` CLI name for use in portable hook commands."""
     return "tetherly"
+
+
+def read_env_file(path: Path) -> dict[str, str]:
+    """Parse a `.env` file into a `key -> value` dict. Returns `{}` if missing."""
+    if not path.exists():
+        return {}
+    result: dict[str, str] = {}
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :]
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        result[key.strip()] = value.strip().strip("'").strip('"')
+    return result
 
 
 def write_env_file(
@@ -216,6 +227,7 @@ __all__ = [
     "USER_ENV_PATH",
     "ensure_user_config_dir",
     "install_codex_hooks",
+    "read_env_file",
     "resolve_tetherly_executable",
     "write_env_file",
 ]

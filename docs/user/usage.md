@@ -45,8 +45,20 @@ Even when hooks are registered globally, **only sessions explicitly bound via `/
 
 ### Re-running
 
-- `tetherly init` again: backs up existing files to `*.bak`, prompts before overwriting.
+- `tetherly init` again: existing values in `~/.tetherly/.env` are shown as defaults; press Enter on each prompt to keep them. The token prompt also accepts an empty input to keep the current token (the masked tail is shown so you can confirm). The previous file is still backed up to `.env.bak`.
 - `tetherly install-hooks` (project) or `tetherly install-hooks --global`: idempotent. Existing entries for unrelated hook events (or other tools) are preserved — the installer appends our entry instead of replacing the array.
+
+### Editing config later
+
+You don't need to re-run `init` for a small tweak — `~/.tetherly/.env` is just a key/value file, and the bot re-reads it on startup.
+
+| Command | What it does |
+| --- | --- |
+| `tetherly config show` | Prints `~/.tetherly/.env` with the bot token masked (only the last 4 chars are shown). |
+| `tetherly config edit` | Opens `~/.tetherly/.env` in `$VISUAL` / `$EDITOR` (falls back to `vi`). |
+| `tetherly init` | Guided re-run with current values as defaults — best when you want to change several at once. |
+
+After editing, restart the bot (`Ctrl-C` and `tetherly` again) so it picks up the new values.
 
 ### Starting the bot
 

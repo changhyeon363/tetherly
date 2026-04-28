@@ -73,6 +73,16 @@ That's it. Now:
 - Use `/send` for explicit control, `/key` for special keys, `/tail` to peek at recent output, `/status` to check the binding.
 - From inside the tmux session, `tetherly discord-send --message "done"` posts back to the bound channel — see [Agent replies](agent-replies.md).
 
+## Changing config later
+
+Anything you entered in step 3 lives in `~/.tetherly/.env`. To update it:
+
+- `tetherly config show` — print the current values (token masked).
+- `tetherly config edit` — open the file in `$EDITOR`.
+- `tetherly init` — re-run the guided flow; existing values appear as defaults, press Enter to keep each one.
+
+Restart the bot after any change.
+
 ## Where to next
 
 - [Setup and usage](usage.md) — operating model, re-binding behavior, the gating rules that keep global hooks quiet.

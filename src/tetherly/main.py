@@ -4,6 +4,8 @@ import argparse
 import getpass
 import json
 import os
+import shlex
+import subprocess
 from pathlib import Path
 import sys
 
@@ -15,6 +17,7 @@ from tetherly.session_registry import SessionRegistry
 from tetherly.setup import (
     ensure_user_config_dir,
     install_codex_hooks,
+    read_env_file,
     write_env_file,
 )
 from tetherly.tmux_service import TmuxService
@@ -44,6 +47,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="overwrite existing files without prompting (a .bak is still kept)",
     )
+
+    config_parser = subparsers.add_parser(
+        "config",
+        help="show or edit ~/.tetherly/.env",
+    )
+    config_sub = config_parser.add_subparsers(dest="config_command", required=True)
+    config_sub.add_parser("show", help="print current config (token masked)")
+    config_sub.add_parser("edit", help="open ~/.tetherly/.env in $EDITOR")
 
     install_hooks_parser = subparsers.add_parser(
         "install-hooks",
@@ -94,16 +105,17 @@ def _prompt(message: str, *, default: str | None = None) -> str:
         print("Please enter a value.")
 
 
-def _prompt_optional(message: str) -> str:
+def _prompt_optional(message: str, *, default: str = "") -> str:
+    hint = default if default else "press Enter to skip"
     try:
-        return input(f"{message} (optional, press Enter to skip): ").strip()
+        return input(f"{message} (optional, [{hint}]): ").strip()
     except EOFError:
         return ""
 
 
-def _prompt_int_list(message: str) -> list[int]:
+def _prompt_int_list(message: str, *, default: str = "") -> list[int]:
     while True:
-        raw = _prompt(message)
+        raw = _prompt(message, default=default or None)
         try:
             values = [int(chunk.strip()) for chunk in raw.split(",") if chunk.strip()]
         except ValueError:
@@ -115,9 +127,14 @@ def _prompt_int_list(message: str) -> list[int]:
         return values
 
 
-def _prompt_optional_int(message: str) -> int | None:
-    raw = _prompt_optional(message)
+def _prompt_optional_int(message: str, *, default: str = "") -> int | None:
+    raw = _prompt_optional(message, default=default)
     if not raw:
+        if default:
+            try:
+                return int(default)
+            except ValueError:
+                return None
         return None
     try:
         return int(raw)
@@ -147,34 +164,52 @@ def run_init(args: argparse.Namespace) -> int:
     print("tetherly — initial setup\n")
     print("This creates ~/.tetherly/.env and (optionally) installs Codex hooks.\n")
 
-    if USER_ENV_PATH.exists() and not args.force:
+    existing = read_env_file(USER_ENV_PATH)
+    if existing and not args.force:
         print(f"⚠  {USER_ENV_PATH} already exists.")
+        print("   Existing values are shown as defaults; press Enter to keep them.")
         proceed = _prompt_choice(
-            "Overwrite it? (a .bak backup will be kept)",
-            {"y": "yes, overwrite", "n": "no, abort"},
-            default="n",
+            "Update it? (a .bak backup will be kept)",
+            {"y": "yes, update", "n": "no, abort"},
+            default="y",
         )
         if proceed != "y":
             print("Aborted.")
             return 1
 
+    existing_token = existing.get("DISCORD_BOT_TOKEN", "").strip()
     print("Discord bot token (input hidden):")
     print("  → https://discord.com/developers/applications")
+    if existing_token:
+        masked = "•" * 4 + existing_token[-4:] if len(existing_token) >= 4 else "••••"
+        print(f"  Press Enter to keep existing token ({masked}).")
     try:
         token = getpass.getpass("  Token: ").strip()
     except EOFError:
         token = ""
     if not token:
-        print("  ✗ Token is required.")
-        return 2
+        if existing_token:
+            token = existing_token
+        else:
+            print("  ✗ Token is required.")
+            return 2
 
     print("\nYour Discord user ID(s), comma-separated:")
     print("  → Discord settings → Advanced → Developer Mode, then right-click your name → Copy User ID.")
-    user_ids = _prompt_int_list("  User ID(s)")
+    user_ids = _prompt_int_list(
+        "  User ID(s)",
+        default=existing.get("TETHERLY_ALLOWED_USER_IDS", ""),
+    )
 
     print("\nOptional restrictions:")
-    guild_id = _prompt_optional_int("  Discord server (guild) ID")
-    test_guild_id = _prompt_optional_int("  Dev/test guild ID for fast slash-command sync")
+    guild_id = _prompt_optional_int(
+        "  Discord server (guild) ID",
+        default=existing.get("TETHERLY_ALLOWED_GUILD_IDS", ""),
+    )
+    test_guild_id = _prompt_optional_int(
+        "  Dev/test guild ID for fast slash-command sync",
+        default=existing.get("TETHERLY_TEST_GUILD_ID", ""),
+    )
 
     print()
     scope = _prompt_choice(
@@ -231,6 +266,62 @@ def run_install_hooks(args: argparse.Namespace) -> int:
     else:
         print(f"  · {result.hooks_json_path}: already up to date")
     return 0
+
+
+_CONFIG_KEY_ORDER = (
+    "DISCORD_BOT_TOKEN",
+    "TETHERLY_ALLOWED_USER_IDS",
+    "TETHERLY_ALLOWED_GUILD_IDS",
+    "TETHERLY_TEST_GUILD_ID",
+)
+
+
+def _mask_token(value: str) -> str:
+    if not value:
+        return "(unset)"
+    return ("•" * 4) + value[-4:] if len(value) >= 4 else "••••"
+
+
+def run_config_show() -> int:
+    if not USER_ENV_PATH.exists():
+        print(
+            f"No config found at {USER_ENV_PATH}. Run `tetherly init` to create it.",
+            file=sys.stderr,
+        )
+        return 1
+    values = read_env_file(USER_ENV_PATH)
+    print(f"Config: {USER_ENV_PATH}")
+    seen: set[str] = set()
+    for key in _CONFIG_KEY_ORDER:
+        seen.add(key)
+        raw = values.get(key, "")
+        display = _mask_token(raw) if key == "DISCORD_BOT_TOKEN" else (raw or "(unset)")
+        print(f"  {key}={display}")
+    for key, raw in values.items():
+        if key in seen:
+            continue
+        print(f"  {key}={raw}")
+    print("\nEdit with `tetherly config edit` or re-run `tetherly init`.")
+    return 0
+
+
+def run_config_edit() -> int:
+    if not USER_ENV_PATH.exists():
+        print(
+            f"No config found at {USER_ENV_PATH}. Run `tetherly init` first.",
+            file=sys.stderr,
+        )
+        return 1
+    editor_cmd = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
+    argv = shlex.split(editor_cmd) + [str(USER_ENV_PATH)]
+    try:
+        return subprocess.call(argv)
+    except FileNotFoundError:
+        print(
+            f"Could not launch editor {editor_cmd!r}. Set $EDITOR or edit {USER_ENV_PATH} directly.",
+            file=sys.stderr,
+        )
+        return 1
 
 
 def run_bot(config: Config, registry: SessionRegistry) -> None:
@@ -458,6 +549,11 @@ def main() -> None:
         raise SystemExit(run_init(args))
     if args.command == "install-hooks":
         raise SystemExit(run_install_hooks(args))
+    if args.command == "config":
+        if args.config_command == "show":
+            raise SystemExit(run_config_show())
+        if args.config_command == "edit":
+            raise SystemExit(run_config_edit())
 
     load_dotenv()
     config = Config.from_env()
