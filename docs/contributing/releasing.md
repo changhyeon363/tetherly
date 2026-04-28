@@ -2,9 +2,9 @@
 icon: lucide/package
 ---
 
-# Releasing to PyPI
+# Releasing
 
-Tetherly publishes to PyPI via a tag-triggered GitHub Actions workflow that uses [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC). There is no API token to manage — PyPI verifies that the upload came from this repo's `publish.yml` and accepts it.
+Tetherly's release flow is one command: push a `vX.Y.Z` git tag. The `Publish` workflow handles PyPI upload **and** GitHub Release creation from there. PyPI auth uses [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC), so there is no API token to rotate.
 
 ## Cutting a release
 
@@ -13,13 +13,18 @@ git tag v0.1.1
 git push --tags
 ```
 
-That's it. The `Publish` workflow runs:
+That's it. The `Publish` workflow runs three jobs in sequence:
 
-1. Checks out the repo with full history (so `setuptools-scm` can resolve the tag → version).
-2. Builds sdist + wheel with `python -m build`.
-3. Uploads to PyPI via `pypa/gh-action-pypi-publish` using OIDC.
+1. **build** — checks out the repo with full history (so `setuptools-scm` can resolve the tag → version) and builds sdist + wheel with `python -m build`.
+2. **publish** — uploads the artifacts to PyPI via `pypa/gh-action-pypi-publish` using OIDC.
+3. **github-release** — creates a GitHub Release for the tag, attaches the sdist/wheel, and auto-generates release notes from commit messages and merged PRs since the previous tag.
 
-Watch the run under **Actions → Publish**. On success, the new version is live at <https://pypi.org/project/tetherly/>.
+Watch the run under **Actions → Publish**. On success:
+
+- New version live at <https://pypi.org/project/tetherly/>
+- New release at <https://github.com/changhyeon363/tetherly/releases>
+
+If you want to tweak the auto-generated notes, edit the release on GitHub afterwards.
 
 ## How versioning works
 
