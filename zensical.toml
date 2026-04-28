@@ -19,6 +19,7 @@ nav = [
         { "Security" = "user/security.md" },
     ] },
     { "Contributing" = [
+        { "Releasing" = "contributing/releasing.md" },
         { "Codex Hooks Internals" = "contributing/codex-hooks-internals.md" },
     ] },
 ]

@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=69", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "tetherly"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Discord to tmux session bridge for agent-driven workflows."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,3 +29,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools_scm]
+# Version is derived from git tags (e.g. `v0.1.1`).
+# Pre-release builds get a dev version like `0.1.1.dev3+gabcdef0`.
