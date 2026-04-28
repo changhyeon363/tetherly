@@ -2,9 +2,19 @@
 icon: lucide/package
 ---
 
-# Releasing to PyPI
+# Releasing
 
-Tetherly publishes to PyPI via a tag-triggered GitHub Actions workflow that uses [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC). There is no API token to manage — PyPI verifies that the upload came from this repo's `publish.yml` and accepts it.
+Tetherly has three things that get "deployed", each driven by a different trigger. Knowing which is which keeps the day-to-day mental model simple.
+
+| Output | Trigger | Workflow |
+| --- | --- | --- |
+| **Docs site** ([changhyeon363.github.io/tetherly](https://changhyeon363.github.io/tetherly/)) | Push to `main` that touches `docs/**` or `zensical.toml` | [`.github/workflows/docs.yml`](https://github.com/changhyeon363/tetherly/blob/main/.github/workflows/docs.yml) |
+| **PyPI package** | Push of a `v*` tag | [`.github/workflows/publish.yml`](https://github.com/changhyeon363/tetherly/blob/main/.github/workflows/publish.yml) (job: `publish`) |
+| **GitHub Release** | Push of a `v*` tag | [`.github/workflows/publish.yml`](https://github.com/changhyeon363/tetherly/blob/main/.github/workflows/publish.yml) (job: `github-release`) |
+
+So docs ship on every merge to `main`, and code releases ship on every tag. Nothing is published manually.
+
+The rest of this page is about the tag flow — that's the only one with a non-trivial procedure. Auth uses [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC), so there is no API token to rotate.
 
 ## Cutting a release
 
@@ -13,13 +23,18 @@ git tag v0.1.1
 git push --tags
 ```
 
-That's it. The `Publish` workflow runs:
+That's it. The `Publish` workflow runs three jobs in sequence:
 
-1. Checks out the repo with full history (so `setuptools-scm` can resolve the tag → version).
-2. Builds sdist + wheel with `python -m build`.
-3. Uploads to PyPI via `pypa/gh-action-pypi-publish` using OIDC.
+1. **build** — checks out the repo with full history (so `setuptools-scm` can resolve the tag → version) and builds sdist + wheel with `python -m build`.
+2. **publish** — uploads the artifacts to PyPI via `pypa/gh-action-pypi-publish` using OIDC.
+3. **github-release** — creates a GitHub Release for the tag, attaches the sdist/wheel, and auto-generates release notes from commit messages and merged PRs since the previous tag.
 
-Watch the run under **Actions → Publish**. On success, the new version is live at <https://pypi.org/project/tetherly/>.
+Watch the run under **Actions → Publish**. On success:
+
+- New version live at <https://pypi.org/project/tetherly/>
+- New release at <https://github.com/changhyeon363/tetherly/releases>
+
+If you want to tweak the auto-generated notes, edit the release on GitHub afterwards.
 
 ## How versioning works
 
