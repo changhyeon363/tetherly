@@ -31,6 +31,14 @@ uv tool install tetherly
 
 Either way you get an isolated environment with a `tetherly` CLI on your `PATH`.
 
+To upgrade later:
+
+```bash
+pipx upgrade tetherly
+# or, with uv:
+uv tool upgrade tetherly
+```
+
 ## 3. Initialize
 
 ```bash

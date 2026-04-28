@@ -26,6 +26,15 @@ pipx install tetherly
 tetherly init
 ```
 
+To upgrade an existing install, use the same tool you installed with:
+
+```bash
+pipx upgrade tetherly
+# or: uv tool upgrade tetherly
+```
+
+Your `~/.tetherly/.env` and `~/.tetherly/state.json` are outside the install location, so upgrades preserve config and bindings. Restart the bot (`Ctrl-C` and `tetherly` again) after upgrading.
+
 `tetherly init` is interactive. It writes:
 
 - `~/.tetherly/.env` — Discord token + allowed user/guild IDs (chmod 600).
