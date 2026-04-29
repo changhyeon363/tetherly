@@ -12,7 +12,7 @@ import sys
 
 from tetherly.authz import AccessController
 from tetherly.config import Config, USER_ENV_PATH, load_dotenv
-from tetherly.discord_bot import TetherlyBot
+from tetherly.discord_bot import TetherlyBot, components_for_intent
 from tetherly.discord_sender import (
     DiscordSendError,
     SendResult,
@@ -497,6 +497,7 @@ async def _send_message_to_binding(
             registry=registry,
             session_name=binding.session_name,
             message=message,
+            components=components_for_intent(intent),
         )
         return PLATFORM_DISCORD, result.channel_id, result.chunks_sent
     if binding.platform == PLATFORM_TELEGRAM:

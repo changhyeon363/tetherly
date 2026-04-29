@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import Any
 
 from tetherly.config import Config
 from tetherly.session_registry import SessionRegistry
@@ -38,7 +39,13 @@ def split_message(text: str, limit: int = DISCORD_MESSAGE_LIMIT) -> list[str]:
     return chunks
 
 
-async def _post_message(token: str, channel_id: int, content: str) -> None:
+async def _post_message(
+    token: str,
+    channel_id: int,
+    content: str,
+    *,
+    components: list[dict[str, Any]] | None = None,
+) -> None:
     import aiohttp
 
     url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
@@ -46,8 +53,11 @@ async def _post_message(token: str, channel_id: int, content: str) -> None:
         "Authorization": f"Bot {token}",
         "Content-Type": "application/json",
     }
+    payload: dict[str, Any] = {"content": content}
+    if components:
+        payload["components"] = components
     async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.post(url, json={"content": content}) as response:
+        async with session.post(url, json=payload) as response:
             if response.status >= 400:
                 body = await response.text()
                 raise DiscordSendError(
@@ -61,13 +71,21 @@ async def send_to_session_async(
     registry: SessionRegistry,
     session_name: str,
     message: str,
+    components: list[dict[str, Any]] | None = None,
 ) -> SendResult:
     binding = registry.get_by_session_name(session_name)
     if binding is None:
         raise DiscordSendError(f"no bound Discord channel for session {session_name!r}")
     chunks = split_message(message)
-    for chunk in chunks:
-        await _post_message(config.discord_bot_token, binding.channel_id, chunk)
+    for index, chunk in enumerate(chunks):
+        # Only attach components to the last chunk so they live on the visible message.
+        chunk_components = components if index == len(chunks) - 1 else None
+        await _post_message(
+            config.discord_bot_token,
+            binding.channel_id,
+            chunk,
+            components=chunk_components,
+        )
     registry.touch(binding.channel_id)
     return SendResult(
         channel_id=binding.channel_id,
@@ -82,6 +100,7 @@ def send_to_session(
     registry: SessionRegistry,
     session_name: str,
     message: str,
+    components: list[dict[str, Any]] | None = None,
 ) -> SendResult:
     return asyncio.run(
         send_to_session_async(
@@ -89,5 +108,6 @@ def send_to_session(
             registry=registry,
             session_name=session_name,
             message=message,
+            components=components,
         )
     )
