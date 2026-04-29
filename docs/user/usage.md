@@ -8,13 +8,14 @@ This document explains the operating model and the parts that aren't obvious fro
 
 ## 1. Architecture
 
-tetherly is **one bot, many tmux sessions, many Discord channels**.
+tetherly is **one process, optional Discord and Telegram bots, many tmux sessions, many chats**.
 
-- A single bot process (one Discord token) runs on your machine.
-- It maintains a state file mapping `Discord channel ↔ tmux session name`.
-- tmux sessions are global to the machine; the bot bridges Discord traffic into whichever session is bound to the current channel.
+- A single bot process runs on your machine. It starts whichever bots you've configured (Discord, Telegram, or both) and shares state between them.
+- It maintains a state file mapping `(platform, channel/chat ID) ↔ tmux session name`.
+- A tmux session is **globally unique across platforms** — bound to one Discord channel **or** one Telegram chat, never both. To move it, `/unbind` from the current chat first.
+- tmux sessions are global to the machine; the bot bridges chat traffic into whichever session is bound to the current chat.
 
-There is no need to run a separate bot per project. Each project simply binds its own tmux session to its own Discord channel.
+There is no need to run a separate bot per project. Each project simply binds its own tmux session to its own chat.
 
 ## 2. Setup
 
@@ -122,9 +123,11 @@ This is also why `tetherly init` defaults to global hook installation: there's n
 
 `tmux set-environment` updates the **session's environment**, not the OS-level environment of shells that are already running inside that session. After `/bind`, running `echo $TETHERLY_NOTIFY_ON_FINISH` in an existing shell may print nothing — that's normal. New windows/panes opened in the session inherit it. The hook handlers don't read the shell's env anyway: they query tmux directly with `tmux show-environment -t <session> TETHERLY_NOTIFY_ON_FINISH`.
 
-## 5. Session detection for `discord-send`
+## 5. Session detection for `tetherly send`
 
-`tetherly discord-send` (used by agents inside a bound tmux session) figures out which Discord channel to post to via this fallback chain ([`main.py:resolve_session_name`](../../src/tetherly/main.py)):
+`tetherly send` (used by agents inside a bound tmux session) figures out which chat to post to. It first resolves the tmux session name, then looks up the binding and routes to whichever platform (Discord or Telegram) the session is bound to. The legacy `tetherly discord-send` is still accepted as an alias.
+
+Session resolution uses this fallback chain ([`main.py:resolve_session_name`](../../src/tetherly/main.py)):
 
 1. **`--session <name>` argument** — explicit override; always wins.
 2. **`os.environ["TETHERLY_SESSION"]`** — useful when calling from outside tmux (cron, external scripts) where you exported the value yourself.
@@ -135,16 +138,18 @@ Practical consequence: layer 3 catches the common case automatically, so layer 2
 
 ## 6. Command behavior worth knowing
 
-### `/bind session:<name>`
+### `/bind <session>`
 
-Bindings live in `~/.tetherly/state.json`, keyed by **Discord channel ID**.
+Bindings live in `~/.tetherly/state.json`, keyed by **(platform, channel/chat ID)**.
 
 | Re-bind scenario | Result |
 | --- | --- |
-| Same channel + same session name | Silently overwrites. **`auto_send` resets to `false`**. `bound_at`/`last_used_at` reset. |
-| Same channel + different session name | Silently overwrites. Old binding is dropped. The old tmux session is **not** killed. |
-| Different channel + session name already bound elsewhere | Rejected: `"session 'foo' is already bound to channel X"`. There is currently no `/unbind` — fix by re-binding the old channel to a different session, or by editing `state.json`. |
-| Different channel + new session name | Adds a new binding. |
+| Same chat + same session name | Silently overwrites. **`auto_send` resets to `false`**. `bound_at`/`last_used_at` reset. |
+| Same chat + different session name | Silently overwrites. Old binding is dropped. The old tmux session is **not** killed. |
+| Session already bound to another chat (same OR different platform) | Rejected: `"session 'foo' is already bound to <platform> channel X; run /unbind there first"`. |
+| Different chat + new session name | Adds a new binding. |
+
+Use `/unbind` in the current chat to release the session before binding it elsewhere.
 
 Side note: `/bind` always calls `tmux_service.ensure_session(name)`, which **creates a fresh empty tmux session if the name doesn't exist**. A typo in the session name therefore silently creates an empty session — the response says `"Created and bound ..."` (vs `"Bound ..."`) which is the only signal.
 
@@ -178,8 +183,8 @@ These respond with an ephemeral error if the tmux session is gone. **`auto_send`
 
 | Path | Role |
 | --- | --- |
-| `~/.tetherly/.env` | Discord token, allowed IDs. Loaded automatically. |
-| `~/.tetherly/state.json` | Channel ↔ session bindings. |
+| `~/.tetherly/.env` | Discord and/or Telegram tokens, allowed IDs. Loaded automatically. |
+| `~/.tetherly/state.json` | (platform, channel/chat) ↔ session bindings. |
 | `~/.codex/config.toml` + `~/.codex/hooks.json` | Global hook install. Created by `tetherly init` (Global mode). |
 | `<project>/.codex/config.toml` + `<project>/.codex/hooks.json` | Project-local hook install. Created by `tetherly install-hooks`. |
 | `<project>/.codex/logs/*.jsonl` | Raw hook payloads, gitignored. |
@@ -192,7 +197,7 @@ These respond with an ephemeral error if the tmux session is gone. **`auto_send`
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `/status` shows 🔴 GONE | tmux session was killed, binding survived | `/bind session:<name>` again |
-| `/bind` errors with `"already bound to channel X"` | Stale binding from another channel whose tmux is dead | Edit `state.json` to remove the old entry, or re-`/bind` from channel X |
+| `/bind` errors with `"already bound to ... channel X"` | Stale binding from another chat whose tmux is dead | Run `/unbind` in chat X (any platform), or edit `state.json` to remove the old entry |
 | Plain-text auto-send seems silently ignored | tmux session is dead, or `auto_send=false` | `/status` to confirm; rebind or `/config auto_send:true` |
 | Codex hooks never fire | Either hooks not installed (`tetherly install-hooks`), or current session not `/bind`-ed | Check `tmux show-environment -t <session> TETHERLY_NOTIFY_ON_FINISH` |
 | `echo $TETHERLY_NOTIFY_ON_FINISH` empty inside a bound session | Expected — tmux set-environment doesn't reach existing shells | Hooks still work; ignore. |

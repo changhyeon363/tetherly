@@ -1,0 +1,454 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import shlex
+from dataclasses import dataclass
+
+from tetherly.config import Config
+from tetherly.models import PLATFORM_TELEGRAM
+from tetherly.session_registry import SessionRegistry, SessionRegistryError
+from tetherly.telegram_sender import (
+    TELEGRAM_MESSAGE_LIMIT,
+    TelegramSendError,
+    post_message,
+    split_message,
+)
+from tetherly.tmux_service import TmuxError, TmuxService, normalize_session_name
+
+LOGGER = logging.getLogger(__name__)
+AUTO_SEND_MAX_LENGTH = 4000
+
+LONG_POLL_TIMEOUT = 25
+POLL_RETRY_DELAY = 5
+
+KEY_CHOICES = ("Enter", "Escape", "Ctrl-C", "Ctrl-D", "Tab", "Up", "Down", "Left", "Right")
+TRUTHY = {"true", "1", "yes", "on", "enable", "enabled"}
+FALSY = {"false", "0", "no", "off", "disable", "disabled"}
+
+COMMAND_DESCRIPTIONS = [
+    {"command": "bind", "description": "Bind this chat to a tmux session"},
+    {"command": "unbind", "description": "Release this chat from its tmux session"},
+    {"command": "config", "description": "Toggle plain-text auto-send (on|off)"},
+    {"command": "send", "description": "Send text + Enter to the bound tmux session"},
+    {"command": "key", "description": "Send a special key (Enter, Escape, Ctrl-C, ...)"},
+    {"command": "tail", "description": "Show recent output from the bound tmux session"},
+    {"command": "status", "description": "Show binding and tmux session status"},
+    {"command": "help", "description": "List available commands"},
+]
+
+
+@dataclass(frozen=True)
+class TelegramAccessController:
+    allowed_user_ids: set[int]
+    allowed_chat_ids: set[int]
+
+    def is_allowed(self, *, chat_id: int, user_id: int) -> bool:
+        if self.allowed_chat_ids and chat_id not in self.allowed_chat_ids:
+            return False
+        if not self.allowed_user_ids:
+            return False
+        return user_id in self.allowed_user_ids
+
+
+def _render_code_block(text: str) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return "```\n<empty>\n```"
+    truncated = stripped[:1800]
+    return f"```\n{truncated}\n```"
+
+
+def _parse_command(text: str) -> tuple[str, str] | None:
+    """Return (command, args_text) or None when this isn't a slash command."""
+    if not text or not text.startswith("/"):
+        return None
+    head, _, rest = text.partition(" ")
+    command = head[1:]
+    if "@" in command:
+        command = command.split("@", 1)[0]
+    if not command:
+        return None
+    return command.lower(), rest.strip()
+
+
+class TelegramBot:
+    def __init__(
+        self,
+        *,
+        config: Config,
+        registry: SessionRegistry,
+        tmux_service: TmuxService,
+        access_controller: TelegramAccessController,
+    ) -> None:
+        if not config.telegram_bot_token:
+            raise ValueError("telegram_bot_token must be configured")
+        self.config = config
+        self.registry = registry
+        self.tmux_service = tmux_service
+        self.access_controller = access_controller
+        self._token = config.telegram_bot_token
+        self._offset: int | None = None
+
+    async def run(self) -> None:
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            LOGGER.info("telegram bot started")
+            await self._register_commands(session)
+            while True:
+                try:
+                    updates = await self._poll(session)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — keep polling alive
+                    LOGGER.warning("telegram poll error: %s", exc)
+                    await asyncio.sleep(POLL_RETRY_DELAY)
+                    continue
+                for update in updates:
+                    try:
+                        await self._handle_update(session, update)
+                    except Exception:  # noqa: BLE001 — never crash the loop
+                        LOGGER.exception("error handling telegram update")
+
+    async def _register_commands(self, session) -> None:
+        url = f"https://api.telegram.org/bot{self._token}/setMyCommands"
+        body = {"commands": COMMAND_DESCRIPTIONS}
+        try:
+            async with session.post(url, json=body, timeout=10) as response:
+                if response.status >= 400:
+                    text = await response.text()
+                    LOGGER.warning("setMyCommands failed (%s): %s", response.status, text)
+        except Exception as exc:  # noqa: BLE001 — never block startup on this
+            LOGGER.warning("setMyCommands errored: %s", exc)
+
+    async def _poll(self, session) -> list[dict]:
+        url = f"https://api.telegram.org/bot{self._token}/getUpdates"
+        params: dict[str, object] = {
+            "timeout": LONG_POLL_TIMEOUT,
+            "allowed_updates": '["message"]',
+        }
+        if self._offset is not None:
+            params["offset"] = self._offset
+        timeout = LONG_POLL_TIMEOUT + 10
+        async with session.get(url, params=params, timeout=timeout) as response:
+            if response.status >= 400:
+                body = await response.text()
+                raise RuntimeError(f"getUpdates failed {response.status}: {body}")
+            payload = await response.json()
+        if not payload.get("ok"):
+            raise RuntimeError(f"getUpdates not ok: {payload!r}")
+        updates = payload.get("result") or []
+        if updates:
+            self._offset = max(int(u["update_id"]) for u in updates) + 1
+        return updates
+
+    async def _handle_update(self, session, update: dict) -> None:
+        message = update.get("message")
+        if not isinstance(message, dict):
+            return
+        chat = message.get("chat") or {}
+        sender = message.get("from") or {}
+        chat_id = chat.get("id")
+        user_id = sender.get("id")
+        text = message.get("text")
+        if not isinstance(chat_id, int) or not isinstance(user_id, int):
+            return
+        if not isinstance(text, str) or not text:
+            return
+
+        parsed = _parse_command(text)
+        if parsed is None:
+            await self._maybe_auto_send(session, chat_id, user_id, text)
+            return
+
+        if not self.access_controller.is_allowed(chat_id=chat_id, user_id=user_id):
+            LOGGER.info(
+                "telegram: ignored /%s from chat=%s user=%s (not on allowlist)",
+                parsed[0],
+                chat_id,
+                user_id,
+            )
+            return
+
+        command, args = parsed
+        try:
+            await self._dispatch(session, chat_id, user_id, command, args)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("command %s failed", command)
+            await self._reply(session, chat_id, "Internal error. Check the bot logs.")
+
+    async def _maybe_auto_send(
+        self, session, chat_id: int, user_id: int, text: str
+    ) -> None:
+        binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
+        if binding is None or not binding.auto_send:
+            return
+        if not self.access_controller.is_allowed(chat_id=chat_id, user_id=user_id):
+            return
+        content = text.strip()
+        if not content or len(content) > AUTO_SEND_MAX_LENGTH:
+            return
+        try:
+            self.tmux_service.send_text(binding.session_name, content, press_enter=True)
+        except TmuxError as exc:
+            LOGGER.warning(
+                "telegram auto-send failed for chat %s session %s: %s",
+                chat_id,
+                binding.session_name,
+                exc,
+            )
+            return
+        self.registry.touch(chat_id, platform=PLATFORM_TELEGRAM)
+
+    async def _dispatch(
+        self,
+        session,
+        chat_id: int,
+        user_id: int,
+        command: str,
+        args: str,
+    ) -> None:
+        if command == "bind":
+            await self._cmd_bind(session, chat_id, user_id, args)
+        elif command == "unbind":
+            await self._cmd_unbind(session, chat_id, args)
+        elif command == "config":
+            await self._cmd_config(session, chat_id, args)
+        elif command == "send":
+            await self._cmd_send(session, chat_id, args)
+        elif command == "key":
+            await self._cmd_key(session, chat_id, args)
+        elif command == "tail":
+            await self._cmd_tail(session, chat_id, args)
+        elif command == "status":
+            await self._cmd_status(session, chat_id)
+        elif command in ("start", "help"):
+            await self._reply(session, chat_id, _help_text())
+        # silently ignore unknown commands so the bot doesn't spam other groups
+
+    async def _cmd_bind(self, session, chat_id: int, user_id: int, args: str) -> None:
+        session_arg = args.strip()
+        if not session_arg:
+            await self._reply(session, chat_id, "Usage: /bind <session-name>")
+            return
+        try:
+            session_name = normalize_session_name(session_arg)
+        except ValueError as exc:
+            await self._reply(session, chat_id, str(exc))
+            return
+        try:
+            created = self.tmux_service.ensure_session(session_name)
+            self.tmux_service.set_session_environment(
+                session_name, "TETHERLY_SESSION", session_name
+            )
+            self.tmux_service.set_session_environment(
+                session_name, "TETHERLY_NOTIFY_ON_FINISH", "1"
+            )
+        except TmuxError as exc:
+            await self._reply(session, chat_id, f"tmux error: {exc}")
+            return
+        try:
+            binding = self.registry.bind(
+                guild_id=chat_id,
+                channel_id=chat_id,
+                session_name=session_name,
+                bound_by=user_id,
+                platform=PLATFORM_TELEGRAM,
+            )
+        except SessionRegistryError as exc:
+            await self._reply(session, chat_id, str(exc))
+            return
+        verb = "Created and bound" if created else "Bound"
+        await self._reply(
+            session,
+            chat_id,
+            f"{verb} this chat to tmux session `{binding.session_name}`.",
+        )
+
+    async def _cmd_unbind(self, session, chat_id: int, args: str) -> None:
+        binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
+        if binding is None:
+            await self._reply(session, chat_id, "This chat is not bound.")
+            return
+        try:
+            self.tmux_service.set_session_environment(
+                binding.session_name, "TETHERLY_NOTIFY_ON_FINISH", ""
+            )
+        except TmuxError:
+            pass
+        self.registry.unbind(chat_id, platform=PLATFORM_TELEGRAM)
+        await self._reply(
+            session,
+            chat_id,
+            f"Unbound this chat from tmux session `{binding.session_name}`.",
+        )
+
+    async def _cmd_config(self, session, chat_id: int, args: str) -> None:
+        binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
+        if binding is None:
+            await self._reply(
+                session,
+                chat_id,
+                "This chat is not bound. Run `/bind <session>` first.",
+            )
+            return
+        value = args.strip().lower()
+        if value in TRUTHY:
+            enabled = True
+        elif value in FALSY:
+            enabled = False
+        else:
+            await self._reply(
+                session,
+                chat_id,
+                "Usage: /config <on|off>  — toggles plain-text auto-send for this chat.",
+            )
+            return
+        updated = self.registry.set_auto_send(
+            chat_id, enabled, platform=PLATFORM_TELEGRAM
+        )
+        status = "enabled" if enabled else "disabled"
+        await self._reply(
+            session,
+            chat_id,
+            f"Auto-send {status} for `{updated.session_name}`.",
+        )
+
+    async def _cmd_send(self, session, chat_id: int, args: str) -> None:
+        binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
+        if binding is None:
+            await self._reply(
+                session,
+                chat_id,
+                "This chat is not bound. Run `/bind <session>` first.",
+            )
+            return
+        text = args
+        if not text.strip():
+            await self._reply(session, chat_id, "Usage: /send <text>")
+            return
+        try:
+            self.tmux_service.send_text(binding.session_name, text, press_enter=True)
+        except TmuxError as exc:
+            await self._reply(
+                session,
+                chat_id,
+                f"Failed to send to `{binding.session_name}`: {exc}",
+            )
+            return
+        self.registry.touch(chat_id, platform=PLATFORM_TELEGRAM)
+        await self._reply(session, chat_id, f"Sent to `{binding.session_name}`.")
+
+    async def _cmd_key(self, session, chat_id: int, args: str) -> None:
+        binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
+        if binding is None:
+            await self._reply(
+                session,
+                chat_id,
+                "This chat is not bound. Run `/bind <session>` first.",
+            )
+            return
+        raw = args.strip()
+        if not raw:
+            await self._reply(
+                session,
+                chat_id,
+                "Usage: /key <" + "|".join(KEY_CHOICES) + ">",
+            )
+            return
+        try:
+            self.tmux_service.send_key(binding.session_name, raw)
+        except TmuxError as exc:
+            await self._reply(
+                session,
+                chat_id,
+                f"Failed to send `{raw}` to `{binding.session_name}`: {exc}",
+            )
+            return
+        self.registry.touch(chat_id, platform=PLATFORM_TELEGRAM)
+        await self._reply(session, chat_id, f"Sent `{raw}` to `{binding.session_name}`.")
+
+    async def _cmd_tail(self, session, chat_id: int, args: str) -> None:
+        binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
+        if binding is None:
+            await self._reply(
+                session,
+                chat_id,
+                "This chat is not bound. Run `/bind <session>` first.",
+            )
+            return
+        requested = self.config.default_tail_lines
+        raw = args.strip()
+        if raw:
+            try:
+                requested = int(shlex.split(raw)[0])
+            except (ValueError, IndexError):
+                await self._reply(session, chat_id, "Usage: /tail [lines]")
+                return
+        capped = min(max(1, requested), self.config.max_tail_lines)
+        try:
+            output = self.tmux_service.capture_tail(binding.session_name, capped)
+        except TmuxError as exc:
+            await self._reply(
+                session,
+                chat_id,
+                f"Failed to capture `{binding.session_name}`: {exc}",
+            )
+            return
+        self.registry.touch(chat_id, platform=PLATFORM_TELEGRAM)
+        body = (
+            f"Recent output from `{binding.session_name}` ({capped} lines max)\n"
+            f"{_render_code_block(output)}"
+        )
+        await self._reply(session, chat_id, body)
+
+    async def _cmd_status(self, session, chat_id: int) -> None:
+        binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
+        if binding is None:
+            await self._reply(session, chat_id, "This chat is not bound.")
+            return
+        tmux_status = self.tmux_service.get_status(binding.session_name)
+        if tmux_status.exists:
+            headline = f"🟢 Active — tmux session `{binding.session_name}` is alive"
+        else:
+            headline = (
+                f"🔴 tmux session `{binding.session_name}` is GONE — "
+                "run `/bind <session>` to reconnect"
+            )
+        body = "\n".join(
+            [
+                headline,
+                f"Chat ID: `{binding.channel_id}`",
+                f"Auto-send: `{binding.auto_send}`",
+                f"Bound by: `{binding.bound_by}`",
+                f"Bound at: `{binding.bound_at}`",
+                f"Last used at: `{binding.last_used_at}`",
+            ]
+        )
+        await self._reply(session, chat_id, body)
+
+    async def _reply(self, session, chat_id: int, text: str) -> None:
+        del session  # unused — sender opens its own session for now
+        for chunk in split_message(text, limit=TELEGRAM_MESSAGE_LIMIT):
+            try:
+                await post_message(self._token, chat_id, chunk)
+            except TelegramSendError as exc:
+                LOGGER.warning("telegram reply failed: %s", exc)
+                return
+
+
+def _help_text() -> str:
+    lines = [
+        "tetherly — Telegram ↔ tmux bridge",
+        "",
+        "Commands:",
+        "  /bind <session>      — bind this chat to a tmux session",
+        "  /unbind              — release this chat",
+        "  /config <on|off>     — toggle plain-text auto-send",
+        "  /send <text>         — send text + Enter to tmux",
+        "  /key <" + "|".join(KEY_CHOICES) + "> — send a special key",
+        "  /tail [lines]        — show recent tmux output",
+        "  /status              — show binding state",
+    ]
+    return "\n".join(lines)

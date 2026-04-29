@@ -48,10 +48,13 @@ def read_env_file(path: Path) -> dict[str, str]:
 def write_env_file(
     *,
     path: Path,
-    token: str,
-    user_ids: list[int],
-    guild_id: int | None,
-    test_guild_id: int | None,
+    discord_token: str | None = None,
+    discord_user_ids: list[int] | None = None,
+    discord_guild_id: int | None = None,
+    discord_test_guild_id: int | None = None,
+    telegram_token: str | None = None,
+    telegram_user_ids: list[int] | None = None,
+    telegram_chat_ids: list[int] | None = None,
     overwrite_backup: bool = True,
 ) -> bool:
     """Write a `.env` file with the supplied values. Backs up an existing file to `.bak`."""
@@ -61,14 +64,27 @@ def write_env_file(
         backup = path.with_suffix(path.suffix + ".bak")
         shutil.copy2(path, backup)
 
-    lines: list[str] = [
-        f"DISCORD_BOT_TOKEN={token}",
-        f"TETHERLY_ALLOWED_USER_IDS={','.join(str(uid) for uid in user_ids)}",
-    ]
-    if guild_id is not None:
-        lines.append(f"TETHERLY_ALLOWED_GUILD_IDS={guild_id}")
-    if test_guild_id is not None:
-        lines.append(f"TETHERLY_TEST_GUILD_ID={test_guild_id}")
+    lines: list[str] = []
+    if discord_token:
+        lines.append(f"DISCORD_BOT_TOKEN={discord_token}")
+        if discord_user_ids:
+            lines.append(
+                f"TETHERLY_ALLOWED_USER_IDS={','.join(str(uid) for uid in discord_user_ids)}"
+            )
+        if discord_guild_id is not None:
+            lines.append(f"TETHERLY_ALLOWED_GUILD_IDS={discord_guild_id}")
+        if discord_test_guild_id is not None:
+            lines.append(f"TETHERLY_TEST_GUILD_ID={discord_test_guild_id}")
+    if telegram_token:
+        lines.append(f"TELEGRAM_BOT_TOKEN={telegram_token}")
+        if telegram_user_ids:
+            lines.append(
+                f"TETHERLY_TELEGRAM_ALLOWED_USER_IDS={','.join(str(uid) for uid in telegram_user_ids)}"
+            )
+        if telegram_chat_ids:
+            lines.append(
+                f"TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS={','.join(str(cid) for cid in telegram_chat_ids)}"
+            )
     path.write_text("\n".join(lines) + "\n")
     try:
         os.chmod(path, 0o600)

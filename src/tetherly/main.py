@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import getpass
 import json
 import os
@@ -12,7 +13,12 @@ import sys
 from tetherly.authz import AccessController
 from tetherly.config import Config, USER_ENV_PATH, load_dotenv
 from tetherly.discord_bot import TetherlyBot
-from tetherly.discord_sender import DiscordSendError, send_to_session
+from tetherly.discord_sender import (
+    DiscordSendError,
+    SendResult,
+    send_to_session_async as discord_send_to_session_async,
+)
+from tetherly.models import PLATFORM_DISCORD, PLATFORM_TELEGRAM, ChannelBinding
 from tetherly.session_registry import SessionRegistry
 from tetherly.setup import (
     ensure_user_config_dir,
@@ -20,7 +26,17 @@ from tetherly.setup import (
     read_env_file,
     write_env_file,
 )
+from tetherly.telegram_bot import TelegramAccessController, TelegramBot
+from tetherly.telegram_sender import (
+    TelegramSendError,
+    TelegramSendResult,
+    send_to_session_async as telegram_send_to_session_async,
+)
 from tetherly.tmux_service import TmuxService
+
+
+class RoutingError(RuntimeError):
+    pass
 
 
 def _append_hook_log(name: str, payload: object) -> None:
@@ -37,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="tetherly")
     subparsers = parser.add_subparsers(dest="command")
 
-    subparsers.add_parser("run-bot", help="run the Discord bot")
+    subparsers.add_parser("run-bot", help="run the configured chat bots")
 
     init_parser = subparsers.add_parser(
         "init", help="interactive setup: write ~/.tetherly/.env and (optionally) Codex hooks"
@@ -67,17 +83,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="install hooks at ~/.codex/ instead of ./.codex/",
     )
 
-    discord_send = subparsers.add_parser(
-        "discord-send",
-        help="send a message to the Discord channel bound to a tmux session",
+    send_parser = subparsers.add_parser(
+        "send",
+        help="send a message to whichever chat (Discord/Telegram) is bound to a tmux session",
     )
-    discord_send.add_argument("--session", help="tmux session name")
-    discord_send.add_argument("--message", help="message text to send")
-    discord_send.add_argument(
+    send_parser.add_argument("--session", help="tmux session name")
+    send_parser.add_argument("--message", help="message text to send")
+    send_parser.add_argument(
         "--stdin",
         action="store_true",
         help="read the message body from standard input",
     )
+
+    # Backwards-compatible aliases
+    discord_send_parser = subparsers.add_parser(
+        "discord-send",
+        help="alias for `tetherly send` (kept for backward compatibility)",
+    )
+    discord_send_parser.add_argument("--session")
+    discord_send_parser.add_argument("--message")
+    discord_send_parser.add_argument("--stdin", action="store_true")
 
     subparsers.add_parser(
         "codex-stop",
@@ -125,6 +150,22 @@ def _prompt_int_list(message: str, *, default: str = "") -> list[int]:
             print("  ✗ At least one ID is required.")
             continue
         return values
+
+
+def _prompt_optional_int_list(message: str, *, default: str = "") -> list[int]:
+    raw = _prompt_optional(message, default=default)
+    if not raw:
+        if default:
+            try:
+                return [int(chunk.strip()) for chunk in default.split(",") if chunk.strip()]
+            except ValueError:
+                return []
+        return []
+    try:
+        return [int(chunk.strip()) for chunk in raw.split(",") if chunk.strip()]
+    except ValueError:
+        print("  ✗ Not valid integers; skipping.")
+        return []
 
 
 def _prompt_optional_int(message: str, *, default: str = "") -> int | None:
@@ -177,39 +218,95 @@ def run_init(args: argparse.Namespace) -> int:
             print("Aborted.")
             return 1
 
-    existing_token = existing.get("DISCORD_BOT_TOKEN", "").strip()
-    print("Discord bot token (input hidden):")
-    print("  → https://discord.com/developers/applications")
-    if existing_token:
-        masked = "•" * 4 + existing_token[-4:] if len(existing_token) >= 4 else "••••"
-        print(f"  Press Enter to keep existing token ({masked}).")
-    try:
-        token = getpass.getpass("  Token: ").strip()
-    except EOFError:
-        token = ""
-    if not token:
+    print("Configure at least one of Discord, Telegram (or both).\n")
+
+    enable_discord = _prompt_choice(
+        "Enable Discord bot?",
+        {"y": "yes", "n": "skip"},
+        default="y" if existing.get("DISCORD_BOT_TOKEN") else "y",
+    ) == "y"
+
+    discord_token = ""
+    discord_user_ids: list[int] = []
+    discord_guild_id: int | None = None
+    discord_test_guild_id: int | None = None
+    if enable_discord:
+        existing_token = existing.get("DISCORD_BOT_TOKEN", "").strip()
+        print("\nDiscord bot token (input hidden):")
+        print("  → https://discord.com/developers/applications")
         if existing_token:
-            token = existing_token
-        else:
-            print("  ✗ Token is required.")
-            return 2
+            masked = "•" * 4 + existing_token[-4:] if len(existing_token) >= 4 else "••••"
+            print(f"  Press Enter to keep existing token ({masked}).")
+        try:
+            discord_token = getpass.getpass("  Token: ").strip()
+        except EOFError:
+            discord_token = ""
+        if not discord_token:
+            if existing_token:
+                discord_token = existing_token
+            else:
+                print("  ✗ Token is required.")
+                return 2
 
-    print("\nYour Discord user ID(s), comma-separated:")
-    print("  → Discord settings → Advanced → Developer Mode, then right-click your name → Copy User ID.")
-    user_ids = _prompt_int_list(
-        "  User ID(s)",
-        default=existing.get("TETHERLY_ALLOWED_USER_IDS", ""),
-    )
+        print("\nYour Discord user ID(s), comma-separated:")
+        print("  → Discord settings → Advanced → Developer Mode, then right-click → Copy User ID.")
+        discord_user_ids = _prompt_int_list(
+            "  User ID(s)",
+            default=existing.get("TETHERLY_ALLOWED_USER_IDS", ""),
+        )
 
-    print("\nOptional restrictions:")
-    guild_id = _prompt_optional_int(
-        "  Discord server (guild) ID",
-        default=existing.get("TETHERLY_ALLOWED_GUILD_IDS", ""),
-    )
-    test_guild_id = _prompt_optional_int(
-        "  Dev/test guild ID for fast slash-command sync",
-        default=existing.get("TETHERLY_TEST_GUILD_ID", ""),
-    )
+        print("\nOptional Discord restrictions:")
+        discord_guild_id = _prompt_optional_int(
+            "  Discord server (guild) ID",
+            default=existing.get("TETHERLY_ALLOWED_GUILD_IDS", ""),
+        )
+        discord_test_guild_id = _prompt_optional_int(
+            "  Dev/test guild ID for fast slash-command sync",
+            default=existing.get("TETHERLY_TEST_GUILD_ID", ""),
+        )
+
+    enable_telegram = _prompt_choice(
+        "\nEnable Telegram bot?",
+        {"y": "yes", "n": "skip"},
+        default="y" if existing.get("TELEGRAM_BOT_TOKEN") else "n",
+    ) == "y"
+
+    telegram_token = ""
+    telegram_user_ids: list[int] = []
+    telegram_chat_ids: list[int] = []
+    if enable_telegram:
+        existing_token = existing.get("TELEGRAM_BOT_TOKEN", "").strip()
+        print("\nTelegram bot token (input hidden):")
+        print("  → Talk to @BotFather on Telegram, run /newbot, copy the token.")
+        if existing_token:
+            masked = "•" * 4 + existing_token[-4:] if len(existing_token) >= 4 else "••••"
+            print(f"  Press Enter to keep existing token ({masked}).")
+        try:
+            telegram_token = getpass.getpass("  Token: ").strip()
+        except EOFError:
+            telegram_token = ""
+        if not telegram_token:
+            if existing_token:
+                telegram_token = existing_token
+            else:
+                print("  ✗ Token is required.")
+                return 2
+
+        print("\nYour Telegram user ID(s), comma-separated:")
+        print("  → DM @userinfobot on Telegram to learn your numeric user ID.")
+        telegram_user_ids = _prompt_int_list(
+            "  User ID(s)",
+            default=existing.get("TETHERLY_TELEGRAM_ALLOWED_USER_IDS", ""),
+        )
+        print("\nOptional Telegram restrictions:")
+        telegram_chat_ids = _prompt_optional_int_list(
+            "  Telegram chat ID(s) to allow (comma-separated; leave blank for any)",
+            default=existing.get("TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS", ""),
+        )
+
+    if not enable_discord and not enable_telegram:
+        print("\n✗ At least one of Discord or Telegram must be enabled. Aborting.")
+        return 2
 
     print()
     scope = _prompt_choice(
@@ -225,10 +322,13 @@ def run_init(args: argparse.Namespace) -> int:
     ensure_user_config_dir()
     existed = write_env_file(
         path=USER_ENV_PATH,
-        token=token,
-        user_ids=user_ids,
-        guild_id=guild_id,
-        test_guild_id=test_guild_id,
+        discord_token=discord_token or None,
+        discord_user_ids=discord_user_ids,
+        discord_guild_id=discord_guild_id,
+        discord_test_guild_id=discord_test_guild_id,
+        telegram_token=telegram_token or None,
+        telegram_user_ids=telegram_user_ids,
+        telegram_chat_ids=telegram_chat_ids,
     )
     print()
     print(f"✓ {'Updated' if existed else 'Wrote'} {USER_ENV_PATH}")
@@ -245,10 +345,13 @@ def run_init(args: argparse.Namespace) -> int:
             print(f"· {result.hooks_json_path} already up to date")
 
     print("\nNext steps:")
-    print("  1. Start the bot:        tetherly")
-    print("  2. In a Discord channel: /bind session:<your-tmux-session>")
+    print("  1. Start the bot:    tetherly")
+    if enable_discord:
+        print("  2. In Discord:       /bind session:<your-tmux-session>")
+    if enable_telegram:
+        print("  3. In Telegram:      /bind <your-tmux-session>")
     if scope == "p":
-        print("  3. In each project:      tetherly install-hooks")
+        print("  4. In each project:  tetherly install-hooks")
     return 0
 
 
@@ -273,7 +376,11 @@ _CONFIG_KEY_ORDER = (
     "TETHERLY_ALLOWED_USER_IDS",
     "TETHERLY_ALLOWED_GUILD_IDS",
     "TETHERLY_TEST_GUILD_ID",
+    "TELEGRAM_BOT_TOKEN",
+    "TETHERLY_TELEGRAM_ALLOWED_USER_IDS",
+    "TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS",
 )
+_TOKEN_KEYS = {"DISCORD_BOT_TOKEN", "TELEGRAM_BOT_TOKEN"}
 
 
 def _mask_token(value: str) -> str:
@@ -295,7 +402,7 @@ def run_config_show() -> int:
     for key in _CONFIG_KEY_ORDER:
         seen.add(key)
         raw = values.get(key, "")
-        display = _mask_token(raw) if key == "DISCORD_BOT_TOKEN" else (raw or "(unset)")
+        display = _mask_token(raw) if key in _TOKEN_KEYS else (raw or "(unset)")
         print(f"  {key}={display}")
     for key, raw in values.items():
         if key in seen:
@@ -325,23 +432,100 @@ def run_config_edit() -> int:
 
 
 def run_bot(config: Config, registry: SessionRegistry) -> None:
+    asyncio.run(_run_bots(config, registry))
+
+
+async def _run_bots(config: Config, registry: SessionRegistry) -> None:
     tmux_service = TmuxService()
-    access_controller = AccessController(
-        allowed_guild_ids=config.allowed_guild_ids,
-        allowed_role_ids=config.allowed_role_ids,
-        allowed_user_ids=config.allowed_user_ids,
+    tasks: list[asyncio.Task] = []
+    if config.discord_bot_token:
+        access_controller = AccessController(
+            allowed_guild_ids=config.allowed_guild_ids,
+            allowed_role_ids=config.allowed_role_ids,
+            allowed_user_ids=config.allowed_user_ids,
+        )
+        bot = TetherlyBot(
+            config=config,
+            registry=registry,
+            tmux_service=tmux_service,
+            access_controller=access_controller,
+        )
+        tasks.append(asyncio.create_task(bot.start(config.discord_bot_token), name="discord"))
+    if config.telegram_bot_token:
+        telegram_access = TelegramAccessController(
+            allowed_user_ids=config.telegram_allowed_user_ids,
+            allowed_chat_ids=config.telegram_allowed_chat_ids,
+        )
+        telegram_bot = TelegramBot(
+            config=config,
+            registry=registry,
+            tmux_service=tmux_service,
+            access_controller=telegram_access,
+        )
+        tasks.append(asyncio.create_task(telegram_bot.run(), name="telegram"))
+    if not tasks:
+        raise RuntimeError("no chat bots configured")
+    try:
+        await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        for task in tasks:
+            task.cancel()
+        raise
+
+
+async def _send_message_to_binding(
+    *,
+    config: Config,
+    registry: SessionRegistry,
+    binding: ChannelBinding,
+    message: str,
+) -> tuple[str, int, int]:
+    """Send `message` to the channel a binding points to. Returns (platform, channel_id, chunks)."""
+    if binding.platform == PLATFORM_DISCORD:
+        if not config.discord_bot_token:
+            raise RoutingError(
+                f"binding for {binding.session_name!r} is Discord but DISCORD_BOT_TOKEN is unset"
+            )
+        result: SendResult = await discord_send_to_session_async(
+            config=config,
+            registry=registry,
+            session_name=binding.session_name,
+            message=message,
+        )
+        return PLATFORM_DISCORD, result.channel_id, result.chunks_sent
+    if binding.platform == PLATFORM_TELEGRAM:
+        if not config.telegram_bot_token:
+            raise RoutingError(
+                f"binding for {binding.session_name!r} is Telegram but TELEGRAM_BOT_TOKEN is unset"
+            )
+        result_tg: TelegramSendResult = await telegram_send_to_session_async(
+            config=config,
+            registry=registry,
+            session_name=binding.session_name,
+            message=message,
+        )
+        return PLATFORM_TELEGRAM, result_tg.chat_id, result_tg.chunks_sent
+    raise RoutingError(f"unknown platform {binding.platform!r}")
+
+
+def route_to_session(
+    *,
+    config: Config,
+    registry: SessionRegistry,
+    session_name: str,
+    message: str,
+) -> tuple[str, int, int]:
+    binding = registry.get_by_session_name(session_name)
+    if binding is None:
+        raise RoutingError(f"no binding for session {session_name!r}")
+    return asyncio.run(
+        _send_message_to_binding(
+            config=config, registry=registry, binding=binding, message=message
+        )
     )
 
-    bot = TetherlyBot(
-        config=config,
-        registry=registry,
-        tmux_service=tmux_service,
-        access_controller=access_controller,
-    )
-    bot.run(config.discord_bot_token)
 
-
-def run_discord_send(
+def run_send(
     args: argparse.Namespace,
     *,
     config: Config,
@@ -360,17 +544,17 @@ def run_discord_send(
         )
         return 2
     try:
-        result = send_to_session(
+        platform, target_id, chunks = route_to_session(
             config=config,
             registry=registry,
             session_name=session_name,
             message=message,
         )
-    except DiscordSendError as exc:
+    except (RoutingError, DiscordSendError, TelegramSendError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
     print(
-        f"Sent {result.chunks_sent} message chunk(s) to channel {result.channel_id} for session {result.session_name}."
+        f"Sent {chunks} message chunk(s) to {platform} target {target_id} for session {session_name}."
     )
     return 0
 
@@ -451,19 +635,19 @@ def run_codex_stop(
         return 0
 
     try:
-        result = send_to_session(
+        platform, target_id, chunks = route_to_session(
             config=config,
             registry=registry,
             session_name=current_session,
             message=message,
         )
-    except DiscordSendError as exc:
+    except (RoutingError, DiscordSendError, TelegramSendError) as exc:
         print(str(exc), file=sys.stderr)
         _emit_empty_hook_output()
         return 1
 
     print(
-        f"Sent {result.chunks_sent} message chunk(s) to channel {result.channel_id} for session {result.session_name}.",
+        f"Sent {chunks} message chunk(s) to {platform} target {target_id} for session {current_session}.",
         file=sys.stderr,
     )
     _emit_empty_hook_output()
@@ -500,19 +684,19 @@ def run_codex_permission_request(
         return 0
 
     try:
-        result = send_to_session(
+        platform, target_id, chunks = route_to_session(
             config=config,
             registry=registry,
             session_name=current_session,
             message=message,
         )
-    except DiscordSendError as exc:
+    except (RoutingError, DiscordSendError, TelegramSendError) as exc:
         print(str(exc), file=sys.stderr)
         _emit_empty_hook_output()
         return 1
 
     print(
-        f"Sent {result.chunks_sent} message chunk(s) to channel {result.channel_id} for session {result.session_name}.",
+        f"Sent {chunks} message chunk(s) to {platform} target {target_id} for session {current_session}.",
         file=sys.stderr,
     )
     _emit_empty_hook_output()
@@ -562,8 +746,8 @@ def main() -> None:
     if args.command in (None, "run-bot"):
         run_bot(config, registry)
         return
-    if args.command == "discord-send":
-        raise SystemExit(run_discord_send(args, config=config, registry=registry))
+    if args.command in ("send", "discord-send"):
+        raise SystemExit(run_send(args, config=config, registry=registry))
     if args.command == "codex-stop":
         raise SystemExit(run_codex_stop(config=config, registry=registry))
     if args.command == "codex-permission-request":

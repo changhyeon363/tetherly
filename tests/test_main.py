@@ -56,20 +56,19 @@ class RunCodexStopTest(unittest.TestCase):
         tmux_service = mock.Mock()
         tmux_service.get_current_session_name.return_value = "t1"
         tmux_service.get_session_environment.return_value = "1"
-        send_result = mock.Mock(chunks_sent=1, channel_id=10, session_name="t1")
         stdout = io.StringIO()
 
         with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
             "tetherly.main.TmuxService", return_value=tmux_service
         ), mock.patch(
-            "tetherly.main.send_to_session", return_value=send_result
-        ) as send:
+            "tetherly.main.route_to_session", return_value=("discord", 10, 1)
+        ) as route:
             self.assertEqual(
                 run_codex_stop(config=mock.Mock(), registry=mock.Mock()),
                 0,
             )
 
-        send.assert_called_once()
+        route.assert_called_once()
         self.assertEqual(stdout.getvalue(), "{}")
 
     def test_skips_when_message_is_missing(self) -> None:
@@ -94,13 +93,13 @@ class RunCodexStopTest(unittest.TestCase):
 
         with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
             "tetherly.main.TmuxService", return_value=tmux_service
-        ), mock.patch("tetherly.main.send_to_session") as send:
+        ), mock.patch("tetherly.main.route_to_session") as route:
             self.assertEqual(
                 run_codex_stop(config=mock.Mock(), registry=mock.Mock()),
                 0,
             )
 
-        send.assert_not_called()
+        route.assert_not_called()
         self.assertEqual(stdout.getvalue(), "{}")
 
 
@@ -122,14 +121,13 @@ class RunCodexPermissionRequestTest(unittest.TestCase):
         tmux_service = mock.Mock()
         tmux_service.get_current_session_name.return_value = "t1"
         tmux_service.get_session_environment.return_value = "1"
-        send_result = mock.Mock(chunks_sent=1, channel_id=10, session_name="t1")
         stdout = io.StringIO()
 
         with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
             "tetherly.main.TmuxService", return_value=tmux_service
         ), mock.patch(
-            "tetherly.main.send_to_session", return_value=send_result
-        ) as send:
+            "tetherly.main.route_to_session", return_value=("telegram", 555, 1)
+        ) as route:
             self.assertEqual(
                 run_codex_permission_request(
                     config=mock.Mock(),
@@ -138,8 +136,8 @@ class RunCodexPermissionRequestTest(unittest.TestCase):
                 0,
             )
 
-        send.assert_called_once()
-        sent_message = send.call_args.kwargs["message"]
+        route.assert_called_once()
+        sent_message = route.call_args.kwargs["message"]
         self.assertIn("승인 요청이 필요합니다.", sent_message)
         self.assertIn("Tool: Bash", sent_message)
         self.assertIn("git push origin main", sent_message)
@@ -155,14 +153,13 @@ class RunCodexPermissionRequestTest(unittest.TestCase):
         tmux_service = mock.Mock()
         tmux_service.get_current_session_name.return_value = "t1"
         tmux_service.get_session_environment.return_value = "1"
-        send_result = mock.Mock(chunks_sent=1, channel_id=10, session_name="t1")
         stdout = io.StringIO()
 
         with self._stdin(payload), mock.patch("sys.stdout", stdout), mock.patch(
             "tetherly.main.TmuxService", return_value=tmux_service
         ), mock.patch(
-            "tetherly.main.send_to_session", return_value=send_result
-        ) as send:
+            "tetherly.main.route_to_session", return_value=("discord", 10, 1)
+        ) as route:
             self.assertEqual(
                 run_codex_permission_request(
                     config=mock.Mock(),
@@ -171,7 +168,7 @@ class RunCodexPermissionRequestTest(unittest.TestCase):
                 0,
             )
 
-        sent_message = send.call_args.kwargs["message"]
+        sent_message = route.call_args.kwargs["message"]
         self.assertIn("Tool: mcp__fs__read", sent_message)
         self.assertIn('"path": "/etc/passwd"', sent_message)
         self.assertIn("read host file", sent_message)

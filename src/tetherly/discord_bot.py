@@ -135,6 +135,32 @@ class TetherlyBot(discord.Client):
             )
 
         @self.tree.command(
+            name="unbind",
+            description="Release this channel from its tmux session binding.",
+        )
+        async def unbind(interaction: discord.Interaction) -> None:
+            if not await self.access_controller.assert_allowed(interaction):
+                return
+            binding = self.registry.get(interaction.channel_id)
+            if binding is None:
+                await interaction.response.send_message(
+                    "This channel is not bound.",
+                    ephemeral=True,
+                )
+                return
+            try:
+                self.tmux_service.set_session_environment(
+                    binding.session_name, "TETHERLY_NOTIFY_ON_FINISH", ""
+                )
+            except TmuxError:
+                pass
+            self.registry.unbind(interaction.channel_id)
+            await interaction.response.send_message(
+                f"Unbound this channel from `{binding.session_name}`.",
+                ephemeral=True,
+            )
+
+        @self.tree.command(
             name="config",
             description="Configure channel behavior for the bound tmux session.",
         )
