@@ -40,9 +40,9 @@ def components_for_intent(intent: MessageIntent) -> list[dict[str, Any]] | None:
         return [
             _action_row(
                 [
-                    _btn("⏎ Enter", _STYLE_PRIMARY, "tetherly:key:enter"),
-                    _btn("📜 Tail", _STYLE_SECONDARY, "tetherly:tail"),
-                    _btn("🛑 Ctrl-C", _STYLE_DANGER, "tetherly:key:ctrl-c"),
+                    _btn("Enter", _STYLE_PRIMARY, "tetherly:key:enter"),
+                    _btn("Tail", _STYLE_SECONDARY, "tetherly:tail"),
+                    _btn("Stop", _STYLE_DANGER, "tetherly:key:ctrl-c"),
                 ]
             )
         ]
@@ -50,9 +50,9 @@ def components_for_intent(intent: MessageIntent) -> list[dict[str, Any]] | None:
         return [
             _action_row(
                 [
-                    _btn("✅ Yes", _STYLE_SUCCESS, "tetherly:key:enter"),
-                    _btn("❌ No", _STYLE_DANGER, "tetherly:key:ctrl-c"),
-                    _btn("📜 Tail", _STYLE_SECONDARY, "tetherly:tail"),
+                    _btn("Yes", _STYLE_SUCCESS, "tetherly:key:enter"),
+                    _btn("No", _STYLE_DANGER, "tetherly:key:ctrl-c"),
+                    _btn("Tail", _STYLE_SECONDARY, "tetherly:tail"),
                 ]
             )
         ]
@@ -63,14 +63,10 @@ def components_for_status() -> list[dict[str, Any]]:
     return [
         _action_row(
             [
-                _btn("🔄 Refresh", _STYLE_PRIMARY, "tetherly:status"),
-                _btn("📜 Tail", _STYLE_SECONDARY, "tetherly:tail"),
-            ]
-        ),
-        _action_row(
-            [
-                _btn("⏎ Enter", _STYLE_PRIMARY, "tetherly:key:enter"),
-                _btn("🛑 Ctrl-C", _STYLE_DANGER, "tetherly:key:ctrl-c"),
+                _btn("Refresh", _STYLE_PRIMARY, "tetherly:status"),
+                _btn("Tail", _STYLE_SECONDARY, "tetherly:tail"),
+                _btn("Enter", _STYLE_PRIMARY, "tetherly:key:enter"),
+                _btn("Stop", _STYLE_DANGER, "tetherly:key:ctrl-c"),
             ]
         ),
     ]
@@ -80,9 +76,9 @@ def components_for_tail() -> list[dict[str, Any]]:
     return [
         _action_row(
             [
-                _btn("🔄 Refresh", _STYLE_PRIMARY, "tetherly:tail"),
-                _btn("⏎ Enter", _STYLE_PRIMARY, "tetherly:key:enter"),
-                _btn("🛑 Ctrl-C", _STYLE_DANGER, "tetherly:key:ctrl-c"),
+                _btn("Refresh", _STYLE_PRIMARY, "tetherly:tail"),
+                _btn("Enter", _STYLE_PRIMARY, "tetherly:key:enter"),
+                _btn("Stop", _STYLE_DANGER, "tetherly:key:ctrl-c"),
             ]
         )
     ]
@@ -573,8 +569,8 @@ class _TetherlyDispatchView(discord.ui.View):
 _DISPATCH_BUTTONS: dict[str, tuple[str, int]] = {
     "tetherly:key:enter": ("Enter", _STYLE_PRIMARY),
     "tetherly:key:esc": ("Esc", _STYLE_SECONDARY),
-    "tetherly:key:ctrl-c": ("Ctrl-C", _STYLE_DANGER),
-    "tetherly:key:ctrl-d": ("Ctrl-D", _STYLE_SECONDARY),
+    "tetherly:key:ctrl-c": ("Stop", _STYLE_DANGER),
+    "tetherly:key:ctrl-d": ("Eof", _STYLE_SECONDARY),
     "tetherly:key:tab": ("Tab", _STYLE_SECONDARY),
     "tetherly:tail": ("Tail", _STYLE_SECONDARY),
     "tetherly:status": ("Status", _STYLE_PRIMARY),
