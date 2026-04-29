@@ -26,7 +26,12 @@ from tetherly.setup import (
     read_env_file,
     write_env_file,
 )
-from tetherly.telegram_bot import TelegramAccessController, TelegramBot
+from tetherly.telegram_bot import (
+    MessageIntent,
+    TelegramAccessController,
+    TelegramBot,
+    keyboard_for_intent,
+)
 from tetherly.telegram_sender import (
     TelegramSendError,
     TelegramSendResult,
@@ -479,6 +484,7 @@ async def _send_message_to_binding(
     registry: SessionRegistry,
     binding: ChannelBinding,
     message: str,
+    intent: MessageIntent = MessageIntent.PLAIN,
 ) -> tuple[str, int, int]:
     """Send `message` to the channel a binding points to. Returns (platform, channel_id, chunks)."""
     if binding.platform == PLATFORM_DISCORD:
@@ -503,6 +509,7 @@ async def _send_message_to_binding(
             registry=registry,
             session_name=binding.session_name,
             message=message,
+            reply_markup=keyboard_for_intent(intent),
         )
         return PLATFORM_TELEGRAM, result_tg.chat_id, result_tg.chunks_sent
     raise RoutingError(f"unknown platform {binding.platform!r}")
@@ -514,13 +521,18 @@ def route_to_session(
     registry: SessionRegistry,
     session_name: str,
     message: str,
+    intent: MessageIntent = MessageIntent.PLAIN,
 ) -> tuple[str, int, int]:
     binding = registry.get_by_session_name(session_name)
     if binding is None:
         raise RoutingError(f"no binding for session {session_name!r}")
     return asyncio.run(
         _send_message_to_binding(
-            config=config, registry=registry, binding=binding, message=message
+            config=config,
+            registry=registry,
+            binding=binding,
+            message=message,
+            intent=intent,
         )
     )
 
@@ -640,6 +652,7 @@ def run_codex_stop(
             registry=registry,
             session_name=current_session,
             message=message,
+            intent=MessageIntent.STOP,
         )
     except (RoutingError, DiscordSendError, TelegramSendError) as exc:
         print(str(exc), file=sys.stderr)
@@ -689,6 +702,7 @@ def run_codex_permission_request(
             registry=registry,
             session_name=current_session,
             message=message,
+            intent=MessageIntent.PERMISSION,
         )
     except (RoutingError, DiscordSendError, TelegramSendError) as exc:
         print(str(exc), file=sys.stderr)
