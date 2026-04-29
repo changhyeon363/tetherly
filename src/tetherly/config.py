@@ -45,13 +45,20 @@ def _parse_id_set(raw: str | None) -> set[int]:
     return values
 
 
+class ConfigError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class Config:
-    discord_bot_token: str
+    discord_bot_token: str | None
+    telegram_bot_token: str | None
     state_path: Path
     allowed_guild_ids: set[int]
     allowed_role_ids: set[int]
     allowed_user_ids: set[int]
+    telegram_allowed_user_ids: set[int]
+    telegram_allowed_chat_ids: set[int]
     test_guild_id: int | None = None
     default_tail_lines: int = 40
     max_tail_lines: int = 200
@@ -60,14 +67,26 @@ class Config:
 
     @classmethod
     def from_env(cls) -> "Config":
-        token = os.environ["DISCORD_BOT_TOKEN"].strip()
+        discord_token = (os.environ.get("DISCORD_BOT_TOKEN") or "").strip() or None
+        telegram_token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip() or None
+        if not discord_token and not telegram_token:
+            raise ConfigError(
+                "At least one of DISCORD_BOT_TOKEN or TELEGRAM_BOT_TOKEN must be set."
+            )
         state_path = Path(os.environ.get("TETHERLY_STATE_PATH", str(USER_STATE_PATH)))
         return cls(
-            discord_bot_token=token,
+            discord_bot_token=discord_token,
+            telegram_bot_token=telegram_token,
             state_path=state_path,
             allowed_guild_ids=_parse_id_set(os.environ.get("TETHERLY_ALLOWED_GUILD_IDS")),
             allowed_role_ids=_parse_id_set(os.environ.get("TETHERLY_ALLOWED_ROLE_IDS")),
             allowed_user_ids=_parse_id_set(os.environ.get("TETHERLY_ALLOWED_USER_IDS")),
+            telegram_allowed_user_ids=_parse_id_set(
+                os.environ.get("TETHERLY_TELEGRAM_ALLOWED_USER_IDS")
+            ),
+            telegram_allowed_chat_ids=_parse_id_set(
+                os.environ.get("TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS")
+            ),
             test_guild_id=int(os.environ["TETHERLY_TEST_GUILD_ID"])
             if os.environ.get("TETHERLY_TEST_GUILD_ID")
             else None,

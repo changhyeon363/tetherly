@@ -8,16 +8,17 @@ icon: lucide/waypoints
 
 # tetherly
 
-A Discord channel ↔ tmux session bridge for agent-driven workflows.
+A Discord / Telegram chat ↔ tmux session bridge for agent-driven workflows.
 
-One bot, many tmux sessions, many Discord channels. `/bind` a channel to a session and Codex (or any agent inside that tmux session) can post status/results back to Discord, while you control the session through Discord slash commands.
+One process, optional Discord and Telegram bots, many tmux sessions, many chats. `/bind` a chat to a session and Codex (or any agent inside that tmux session) can post status/results back to the chat, while you control the session through slash commands.
 
 ## Start here
 
-- **[Quick Start](user/quickstart.md)** — install, create a bot, bind your first channel in ~5 minutes.
+- **[Quick Start](user/quickstart.md)** — install, create a bot, bind your first chat in ~5 minutes.
+- **[Telegram setup](user/telegram-setup.md)** — BotFather, privacy mode, group chats, troubleshooting.
 - **[Setup and usage](user/usage.md)** — operating model, install modes, command semantics, troubleshooting.
-- **[Agent replies](user/agent-replies.md)** — how `tetherly discord-send` works from inside a bound tmux session.
-- **[Security](user/security.md)** — restricting which Discord servers and users can drive the bot.
+- **[Agent replies](user/agent-replies.md)** — how `tetherly send` routes replies from inside a bound tmux session.
+- **[Security](user/security.md)** — restricting which servers, chats, and users can drive the bot.
 
 ## For contributors
 

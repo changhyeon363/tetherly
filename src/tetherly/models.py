@@ -4,6 +4,11 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 
 
+PLATFORM_DISCORD = "discord"
+PLATFORM_TELEGRAM = "telegram"
+SUPPORTED_PLATFORMS = (PLATFORM_DISCORD, PLATFORM_TELEGRAM)
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -17,6 +22,7 @@ class ChannelBinding:
     bound_by: int
     bound_at: str
     last_used_at: str
+    platform: str = PLATFORM_DISCORD
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -31,4 +37,5 @@ class ChannelBinding:
             bound_by=int(payload["bound_by"]),
             bound_at=str(payload["bound_at"]),
             last_used_at=str(payload["last_used_at"]),
+            platform=str(payload.get("platform", PLATFORM_DISCORD)),
         )
