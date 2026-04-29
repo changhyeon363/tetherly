@@ -93,8 +93,22 @@ Same commands as the Discord side, with Telegram-flavored argument syntax:
 | Recent output | `/tail` or `/tail 80` |
 | Status | `/status` |
 | Help | `/help` |
+| **Quick keys** | `/enter` `/esc` `/ctrlc` `/ctrld` `/tab` (no arguments) |
 
 A tmux session is **globally unique across platforms** — bound to one Discord channel **or** one Telegram chat, never both. Run `/unbind` first to move it.
+
+## Inline buttons
+
+The bot attaches inline buttons to alerts and to `/status` / `/tail`, so you rarely need to type slash commands at all:
+
+| Trigger | Buttons |
+| --- | --- |
+| Codex Stop alert ("작업이 끝났습니다") | `[⏎ Enter] [📜 Tail] [🛑 Ctrl-C]` |
+| Codex PermissionRequest alert | `[✅ Yes] [❌ No] [📜 Tail]` (Yes = Enter, No = Ctrl-C) |
+| `/status` | `[🔄 Refresh] [📜 Tail] [⏎ Enter] [🛑 Ctrl-C]` |
+| `/tail` | `[🔄 Refresh] [⏎ Enter] [🛑 Ctrl-C]` |
+
+Tap a button to send the action; Refresh updates the same message in place. The bot doesn't add a permanent reply keyboard, so the input area stays clean.
 
 ## Troubleshooting
 

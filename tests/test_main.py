@@ -10,6 +10,7 @@ from tetherly.main import (
     run_codex_permission_request,
     run_codex_stop,
 )
+from tetherly.telegram_bot import MessageIntent
 
 
 class ResolveSessionNameTest(unittest.TestCase):
@@ -69,6 +70,7 @@ class RunCodexStopTest(unittest.TestCase):
             )
 
         route.assert_called_once()
+        self.assertEqual(route.call_args.kwargs["intent"], MessageIntent.STOP)
         self.assertEqual(stdout.getvalue(), "{}")
 
     def test_skips_when_message_is_missing(self) -> None:
@@ -138,6 +140,7 @@ class RunCodexPermissionRequestTest(unittest.TestCase):
 
         route.assert_called_once()
         sent_message = route.call_args.kwargs["message"]
+        self.assertEqual(route.call_args.kwargs["intent"], MessageIntent.PERMISSION)
         self.assertIn("승인 요청이 필요합니다.", sent_message)
         self.assertIn("Tool: Bash", sent_message)
         self.assertIn("git push origin main", sent_message)
