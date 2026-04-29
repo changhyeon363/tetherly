@@ -44,9 +44,9 @@ def keyboard_for_intent(intent: MessageIntent) -> dict[str, Any] | None:
         return _inline_keyboard(
             [
                 [
-                    _button("⏎ Enter", "key:enter"),
-                    _button("📜 Tail", "tail"),
-                    _button("🛑 Ctrl-C", "key:ctrl-c"),
+                    _button("Enter", "key:enter"),
+                    _button("Tail", "tail"),
+                    _button("Stop", "key:ctrl-c"),
                 ]
             ]
         )
@@ -54,9 +54,9 @@ def keyboard_for_intent(intent: MessageIntent) -> dict[str, Any] | None:
         return _inline_keyboard(
             [
                 [
-                    _button("✅ Yes", "key:enter"),
-                    _button("❌ No", "key:ctrl-c"),
-                    _button("📜 Tail", "tail"),
+                    _button("Yes", "key:enter"),
+                    _button("No", "key:ctrl-c"),
+                    _button("Tail", "tail"),
                 ]
             ]
         )
@@ -67,13 +67,11 @@ def keyboard_for_status() -> dict[str, Any]:
     return _inline_keyboard(
         [
             [
-                _button("🔄 Refresh", "status"),
-                _button("📜 Tail", "tail"),
-            ],
-            [
-                _button("⏎ Enter", "key:enter"),
-                _button("🛑 Ctrl-C", "key:ctrl-c"),
-            ],
+                _button("Refresh", "status"),
+                _button("Tail", "tail"),
+                _button("Enter", "key:enter"),
+                _button("Stop", "key:ctrl-c"),
+            ]
         ]
     )
 
@@ -82,9 +80,9 @@ def keyboard_for_tail() -> dict[str, Any]:
     return _inline_keyboard(
         [
             [
-                _button("🔄 Refresh", "tail"),
-                _button("⏎ Enter", "key:enter"),
-                _button("🛑 Ctrl-C", "key:ctrl-c"),
+                _button("Refresh", "tail"),
+                _button("Enter", "key:enter"),
+                _button("Stop", "key:ctrl-c"),
             ]
         ]
     )
