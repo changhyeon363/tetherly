@@ -4,6 +4,8 @@ import asyncio
 import logging
 import shlex
 from dataclasses import dataclass
+from enum import Enum
+from typing import Any
 
 from tetherly.config import Config
 from tetherly.models import PLATFORM_TELEGRAM
@@ -11,10 +13,81 @@ from tetherly.session_registry import SessionRegistry, SessionRegistryError
 from tetherly.telegram_sender import (
     TELEGRAM_MESSAGE_LIMIT,
     TelegramSendError,
+    answer_callback_query,
+    edit_message_text,
     post_message,
     split_message,
 )
 from tetherly.tmux_service import TmuxError, TmuxService, normalize_session_name
+
+
+class MessageIntent(str, Enum):
+    """Why a notification is being sent. Drives the inline-keyboard layout."""
+
+    PLAIN = "plain"
+    STOP = "stop"
+    PERMISSION = "permission"
+
+
+# Inline keyboard layouts ---------------------------------------------------
+
+def _button(label: str, callback_data: str) -> dict[str, str]:
+    return {"text": label, "callback_data": callback_data}
+
+
+def _inline_keyboard(rows: list[list[dict[str, str]]]) -> dict[str, Any]:
+    return {"inline_keyboard": rows}
+
+
+def keyboard_for_intent(intent: MessageIntent) -> dict[str, Any] | None:
+    if intent == MessageIntent.STOP:
+        return _inline_keyboard(
+            [
+                [
+                    _button("⏎ Enter", "key:enter"),
+                    _button("📜 Tail", "tail"),
+                    _button("🛑 Ctrl-C", "key:ctrl-c"),
+                ]
+            ]
+        )
+    if intent == MessageIntent.PERMISSION:
+        return _inline_keyboard(
+            [
+                [
+                    _button("✅ Yes", "key:enter"),
+                    _button("❌ No", "key:ctrl-c"),
+                    _button("📜 Tail", "tail"),
+                ]
+            ]
+        )
+    return None
+
+
+def keyboard_for_status() -> dict[str, Any]:
+    return _inline_keyboard(
+        [
+            [
+                _button("🔄 Refresh", "status"),
+                _button("📜 Tail", "tail"),
+            ],
+            [
+                _button("⏎ Enter", "key:enter"),
+                _button("🛑 Ctrl-C", "key:ctrl-c"),
+            ],
+        ]
+    )
+
+
+def keyboard_for_tail() -> dict[str, Any]:
+    return _inline_keyboard(
+        [
+            [
+                _button("🔄 Refresh", "tail"),
+                _button("⏎ Enter", "key:enter"),
+                _button("🛑 Ctrl-C", "key:ctrl-c"),
+            ]
+        ]
+    )
 
 LOGGER = logging.getLogger(__name__)
 AUTO_SEND_MAX_LENGTH = 4000
@@ -34,8 +107,22 @@ COMMAND_DESCRIPTIONS = [
     {"command": "key", "description": "Send a special key (Enter, Escape, Ctrl-C, ...)"},
     {"command": "tail", "description": "Show recent output from the bound tmux session"},
     {"command": "status", "description": "Show binding and tmux session status"},
+    {"command": "enter", "description": "Send Enter (alias for /key Enter)"},
+    {"command": "esc", "description": "Send Escape"},
+    {"command": "ctrlc", "description": "Send Ctrl-C (interrupt)"},
+    {"command": "ctrld", "description": "Send Ctrl-D"},
+    {"command": "tab", "description": "Send Tab"},
     {"command": "help", "description": "List available commands"},
 ]
+
+
+KEY_ALIAS_COMMANDS = {
+    "enter": "enter",
+    "esc": "esc",
+    "ctrlc": "ctrl-c",
+    "ctrld": "ctrl-d",
+    "tab": "tab",
+}
 
 
 @dataclass(frozen=True)
@@ -126,7 +213,7 @@ class TelegramBot:
         url = f"https://api.telegram.org/bot{self._token}/getUpdates"
         params: dict[str, object] = {
             "timeout": LONG_POLL_TIMEOUT,
-            "allowed_updates": '["message"]',
+            "allowed_updates": '["message","callback_query"]',
         }
         if self._offset is not None:
             params["offset"] = self._offset
@@ -144,6 +231,10 @@ class TelegramBot:
         return updates
 
     async def _handle_update(self, session, update: dict) -> None:
+        if isinstance(update.get("callback_query"), dict):
+            await self._handle_callback_query(session, update["callback_query"])
+            return
+
         message = update.get("message")
         if not isinstance(message, dict):
             return
@@ -177,6 +268,138 @@ class TelegramBot:
         except Exception:  # noqa: BLE001
             LOGGER.exception("command %s failed", command)
             await self._reply(session, chat_id, "Internal error. Check the bot logs.")
+
+    async def _handle_callback_query(self, session, callback: dict) -> None:
+        callback_id = callback.get("id")
+        if not isinstance(callback_id, str):
+            return
+        sender = callback.get("from") or {}
+        user_id = sender.get("id")
+        message = callback.get("message") or {}
+        chat = message.get("chat") or {}
+        chat_id = chat.get("id")
+        message_id = message.get("message_id")
+        data = callback.get("data")
+        if (
+            not isinstance(user_id, int)
+            or not isinstance(chat_id, int)
+            or not isinstance(message_id, int)
+            or not isinstance(data, str)
+        ):
+            await self._answer_callback(callback_id)
+            return
+
+        if not self.access_controller.is_allowed(chat_id=chat_id, user_id=user_id):
+            LOGGER.info(
+                "telegram: ignored callback %r from chat=%s user=%s (not on allowlist)",
+                data,
+                chat_id,
+                user_id,
+            )
+            await self._answer_callback(callback_id)
+            return
+
+        try:
+            await self._dispatch_callback(
+                session, chat_id, message_id, data, callback_id
+            )
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("callback %s failed", data)
+            await self._answer_callback(callback_id, text="Error")
+
+    async def _dispatch_callback(
+        self,
+        session,
+        chat_id: int,
+        message_id: int,
+        data: str,
+        callback_id: str,
+    ) -> None:
+        binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
+        if binding is None:
+            await self._answer_callback(callback_id, text="Not bound")
+            return
+
+        if data.startswith("key:"):
+            key = data.split(":", 1)[1]
+            try:
+                self.tmux_service.send_key(binding.session_name, key)
+            except TmuxError as exc:
+                await self._answer_callback(callback_id, text=f"Failed: {exc}")
+                return
+            self.registry.touch(chat_id, platform=PLATFORM_TELEGRAM)
+            await self._answer_callback(callback_id, text=f"Sent {key}")
+            return
+
+        if data == "tail":
+            requested = self.config.default_tail_lines
+            capped = min(max(1, requested), self.config.max_tail_lines)
+            try:
+                output = self.tmux_service.capture_tail(binding.session_name, capped)
+            except TmuxError as exc:
+                await self._answer_callback(callback_id, text=f"Failed: {exc}")
+                return
+            self.registry.touch(chat_id, platform=PLATFORM_TELEGRAM)
+            body = (
+                f"Recent output from `{binding.session_name}` ({capped} lines max)\n"
+                f"{_render_code_block(output)}"
+            )
+            await self._edit(session, chat_id, message_id, body, keyboard_for_tail())
+            await self._answer_callback(callback_id)
+            return
+
+        if data == "status":
+            tmux_status = self.tmux_service.get_status(binding.session_name)
+            if tmux_status.exists:
+                headline = f"🟢 Active — tmux session `{binding.session_name}` is alive"
+            else:
+                headline = (
+                    f"🔴 tmux session `{binding.session_name}` is GONE — "
+                    "run `/bind <session>` to reconnect"
+                )
+            body = "\n".join(
+                [
+                    headline,
+                    f"Chat ID: `{binding.channel_id}`",
+                    f"Auto-send: `{binding.auto_send}`",
+                    f"Bound by: `{binding.bound_by}`",
+                    f"Bound at: `{binding.bound_at}`",
+                    f"Last used at: `{binding.last_used_at}`",
+                ]
+            )
+            await self._edit(session, chat_id, message_id, body, keyboard_for_status())
+            await self._answer_callback(callback_id)
+            return
+
+        await self._answer_callback(callback_id, text="Unknown action")
+
+    async def _answer_callback(
+        self, callback_id: str, *, text: str | None = None
+    ) -> None:
+        try:
+            await answer_callback_query(self._token, callback_id, text=text)
+        except TelegramSendError as exc:
+            LOGGER.warning("answerCallbackQuery failed: %s", exc)
+
+    async def _edit(
+        self,
+        session,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        reply_markup: dict[str, Any] | None,
+    ) -> None:
+        del session  # sender opens its own
+        try:
+            await edit_message_text(
+                self._token,
+                chat_id,
+                message_id,
+                text[:TELEGRAM_MESSAGE_LIMIT],
+                reply_markup=reply_markup,
+            )
+        except TelegramSendError as exc:
+            LOGGER.warning("editMessageText failed: %s", exc)
 
     async def _maybe_auto_send(
         self, session, chat_id: int, user_id: int, text: str
@@ -223,9 +446,32 @@ class TelegramBot:
             await self._cmd_tail(session, chat_id, args)
         elif command == "status":
             await self._cmd_status(session, chat_id)
+        elif command in KEY_ALIAS_COMMANDS:
+            await self._cmd_key_alias(session, chat_id, KEY_ALIAS_COMMANDS[command])
         elif command in ("start", "help"):
             await self._reply(session, chat_id, _help_text())
         # silently ignore unknown commands so the bot doesn't spam other groups
+
+    async def _cmd_key_alias(self, session, chat_id: int, key: str) -> None:
+        binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
+        if binding is None:
+            await self._reply(
+                session,
+                chat_id,
+                "This chat is not bound. Run `/bind <session>` first.",
+            )
+            return
+        try:
+            self.tmux_service.send_key(binding.session_name, key)
+        except TmuxError as exc:
+            await self._reply(
+                session,
+                chat_id,
+                f"Failed to send `{key}` to `{binding.session_name}`: {exc}",
+            )
+            return
+        self.registry.touch(chat_id, platform=PLATFORM_TELEGRAM)
+        await self._reply(session, chat_id, f"Sent `{key}` to `{binding.session_name}`.")
 
     async def _cmd_bind(self, session, chat_id: int, user_id: int, args: str) -> None:
         session_arg = args.strip()
@@ -401,7 +647,7 @@ class TelegramBot:
             f"Recent output from `{binding.session_name}` ({capped} lines max)\n"
             f"{_render_code_block(output)}"
         )
-        await self._reply(session, chat_id, body)
+        await self._reply(session, chat_id, body, reply_markup=keyboard_for_tail())
 
     async def _cmd_status(self, session, chat_id: int) -> None:
         binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
@@ -426,13 +672,22 @@ class TelegramBot:
                 f"Last used at: `{binding.last_used_at}`",
             ]
         )
-        await self._reply(session, chat_id, body)
+        await self._reply(session, chat_id, body, reply_markup=keyboard_for_status())
 
-    async def _reply(self, session, chat_id: int, text: str) -> None:
+    async def _reply(
+        self,
+        session,
+        chat_id: int,
+        text: str,
+        *,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> None:
         del session  # unused — sender opens its own session for now
-        for chunk in split_message(text, limit=TELEGRAM_MESSAGE_LIMIT):
+        chunks = split_message(text, limit=TELEGRAM_MESSAGE_LIMIT)
+        for index, chunk in enumerate(chunks):
+            markup = reply_markup if index == len(chunks) - 1 else None
             try:
-                await post_message(self._token, chat_id, chunk)
+                await post_message(self._token, chat_id, chunk, reply_markup=markup)
             except TelegramSendError as exc:
                 LOGGER.warning("telegram reply failed: %s", exc)
                 return
@@ -450,5 +705,10 @@ def _help_text() -> str:
         "  /key <" + "|".join(KEY_CHOICES) + "> — send a special key",
         "  /tail [lines]        — show recent tmux output",
         "  /status              — show binding state",
+        "",
+        "Quick keys (no args):",
+        "  /enter /esc /ctrlc /ctrld /tab",
+        "",
+        "Tip: alerts include inline buttons — just tap them.",
     ]
     return "\n".join(lines)
