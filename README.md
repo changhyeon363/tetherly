@@ -20,7 +20,7 @@ Same slash commands work in both Discord and Telegram:
 - `/tail [lines]`: fetch recent tmux output
 - `/status`: inspect the current binding and tmux session status
 - Quick keys (no arguments): `/enter`, `/esc`, `/ctrlc`, `/ctrld`, `/tab`
-- **Inline buttons** on Codex alerts and on `/status` / `/tail`: tap `[⏎ Enter]`, `[✅ Yes]`, `[🔄 Refresh]`, `[🛑 Ctrl-C]` etc. directly in chat — no typing needed
+- **Inline buttons** on Codex alerts and on `/status` / `/tail`: tap `[Enter]`, `[Yes]`, `[Refresh]`, `[Stop]` directly in chat — no typing needed
 
 CLI helpers (run from inside a tmux session):
 

@@ -55,7 +55,7 @@ TETHERLY_TEST_GUILD_ID=YOUR_GUILD_ID
 
 - `.env`의 `TETHERLY_TELEGRAM_ALLOWED_USER_IDS`는 봇 명령을 실행할 수 있는 Telegram 사용자 ID 목록입니다.
 - **목록이 비어 있으면 아무도 명령을 실행할 수 없습니다** (디스코드와 동일한 fail-closed 동작).
-- 이 allowlist에 없는 사용자가 `/bind` 등을 보내면 봇은 "You are not allowed to use this command." 로 응답하고 동작하지 않습니다.
+- allowlist에 없는 사용자의 명령·버튼 클릭은 **무반응** — 거부 메시지조차 보내지 않고 서버 로그에 한 줄 기록 후 무시합니다. 거부 응답은 봇의 존재를 광고하는 셈이라 일부러 침묵하도록 했어요. 이 때문에 본인 ID가 allowlist에 빠져 있으면 "봇이 죽었나" 싶게 보일 수 있으니, 동작이 안 되면 `tetherly config show`로 먼저 확인하세요.
 
 ### 3. 채팅 제한 (선택)
 
