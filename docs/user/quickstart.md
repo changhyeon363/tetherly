@@ -95,6 +95,8 @@ That's it. Now:
 
 - Anything you type in that chat goes straight to the `work` tmux session, followed by Enter.
 - `/send`, `/key`, `/tail`, `/status` work the same in both platforms.
+- Codex alerts (Stop, PermissionRequest) and `/status` / `/tail` responses include inline buttons — `[Enter] [Tail] [Stop]`, `[Yes] [No] [Tail]`, `[Refresh] …` — tap instead of typing.
+- On Telegram, picking a slash command from the `/` autocomplete sends it without arguments; the bot responds with a one-line reply prompt and your input area auto-opens to fill in the missing text. Details in [Telegram setup](telegram-setup.md#filling-in-arguments-via-reply).
 - `/unbind` releases the chat from the session — required before binding the same session somewhere else (a session is globally unique across platforms).
 - From inside the tmux session, `tetherly send --message "done"` posts back to the chat — see [Agent replies](agent-replies.md).
 
