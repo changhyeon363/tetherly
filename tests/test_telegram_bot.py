@@ -3,9 +3,12 @@ from __future__ import annotations
 import unittest
 
 from tetherly.telegram_bot import (
+    _ARG_PROMPTS,
+    _PROMPT_TEXT_TO_COMMAND,
     KEY_ALIAS_COMMANDS,
     MessageIntent,
     TelegramAccessController,
+    _match_arg_prompt_reply,
     _parse_command,
     keyboard_for_intent,
     keyboard_for_status,
@@ -126,6 +129,37 @@ class KeyAliasCommandsTest(unittest.TestCase):
         self.assertEqual(KEY_ALIAS_COMMANDS["ctrlc"], "ctrl-c")
         self.assertEqual(KEY_ALIAS_COMMANDS["ctrld"], "ctrl-d")
         self.assertEqual(KEY_ALIAS_COMMANDS["tab"], "tab")
+
+
+class ArgPromptTest(unittest.TestCase):
+    def test_prompts_round_trip_to_command_names(self) -> None:
+        for cmd, text in _ARG_PROMPTS.items():
+            self.assertEqual(_PROMPT_TEXT_TO_COMMAND[text], cmd)
+
+    def test_match_arg_prompt_reply_detects_bot_prompt(self) -> None:
+        msg = {
+            "reply_to_message": {
+                "from": {"is_bot": True},
+                "text": _ARG_PROMPTS["send"],
+            }
+        }
+        self.assertEqual(_match_arg_prompt_reply(msg), "send")
+
+    def test_match_arg_prompt_reply_ignores_non_bot_replies(self) -> None:
+        msg = {
+            "reply_to_message": {
+                "from": {"is_bot": False},
+                "text": _ARG_PROMPTS["send"],
+            }
+        }
+        self.assertIsNone(_match_arg_prompt_reply(msg))
+
+    def test_match_arg_prompt_reply_ignores_unrelated_messages(self) -> None:
+        msg = {"reply_to_message": {"from": {"is_bot": True}, "text": "hi"}}
+        self.assertIsNone(_match_arg_prompt_reply(msg))
+
+    def test_match_arg_prompt_reply_handles_no_reply(self) -> None:
+        self.assertIsNone(_match_arg_prompt_reply({}))
 
 
 if __name__ == "__main__":

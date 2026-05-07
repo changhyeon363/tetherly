@@ -46,6 +46,7 @@ async def post_message(
     content: str,
     *,
     reply_markup: dict[str, Any] | None = None,
+    reply_to_message_id: int | None = None,
 ) -> None:
     import aiohttp
 
@@ -53,6 +54,8 @@ async def post_message(
     payload: dict[str, Any] = {"chat_id": chat_id, "text": content}
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
+    if reply_to_message_id is not None:
+        payload["reply_to_message_id"] = reply_to_message_id
     async with aiohttp.ClientSession() as session:
         async with session.post(url, json=payload) as response:
             if response.status >= 400:
