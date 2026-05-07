@@ -12,13 +12,17 @@ copyright = "Copyright &copy; 2026 tetherly contributors"
 # Explicit nav order — most-viewed pages first.
 nav = [
     { "Home" = "index.md" },
-    { "User Guide" = [
-        { "Quick Start" = "user/quickstart.md" },
-        { "Telegram Setup" = "user/telegram-setup.md" },
-        { "Setup and Usage" = "user/usage.md" },
-        { "Agent Replies" = "user/agent-replies.md" },
-        { "Security" = "user/security.md" },
+    { "Getting Started" = "getting-started.md" },
+    { "Platforms" = [
+        { "Discord Setup" = "platforms/discord.md" },
+        { "Telegram Setup" = "platforms/telegram.md" },
     ] },
+    { "Reference" = [
+        { "Commands" = "reference/commands.md" },
+        { "Architecture" = "reference/architecture.md" },
+        { "Agent Send" = "reference/agent-send.md" },
+    ] },
+    { "Security" = "security.md" },
     { "Contributing" = [
         { "Releasing" = "contributing/releasing.md" },
         { "Codex Hooks Internals" = "contributing/codex-hooks-internals.md" },

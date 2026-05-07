@@ -6,7 +6,7 @@
 
 Discord / Telegram channel ↔ tmux session bridge.
 
-> 📖 **Documentation is in [docs/](docs/) — split into [user docs](docs/user/) (setup, commands, troubleshooting) and [contributing docs](docs/contributing/) (internals).** This README is a quick start.
+> 📖 **Full documentation: [docs/](docs/).** Start with [Getting Started](docs/getting-started.md), then [Command Reference](docs/reference/commands.md), [Architecture](docs/reference/architecture.md), and [Security](docs/security.md). This README is a quick start.
 
 ## Features
 
@@ -35,7 +35,7 @@ A tmux session is **globally unique across platforms** — it can be bound to on
 - `tmux` installed
 - A Discord bot token and/or a Telegram bot token (at least one)
   - Discord: enable Message Content Intent if you want plain-text auto-send
-  - Telegram: created via [@BotFather](https://t.me/BotFather) — full walkthrough in [docs/user/telegram-setup.md](docs/user/telegram-setup.md)
+  - Telegram: created via [@BotFather](https://t.me/BotFather) — full walkthrough in [docs/platforms/telegram.md](docs/platforms/telegram.md)
 
 ## Setup
 

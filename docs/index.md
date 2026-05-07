@@ -14,15 +14,24 @@ One process, optional Discord and Telegram bots, many tmux sessions, many chats.
 
 ## Start here
 
-- **[Quick Start](user/quickstart.md)** — install, create a bot, bind your first chat in ~5 minutes.
-- **[Telegram setup](user/telegram-setup.md)** — BotFather, privacy mode, group chats, troubleshooting.
-- **[Setup and usage](user/usage.md)** — operating model, install modes, command semantics, troubleshooting.
-- **[Agent replies](user/agent-replies.md)** — how `tetherly send` routes replies from inside a bound tmux session.
-- **[Security](user/security.md)** — restricting which servers, chats, and users can drive the bot.
+- **[Getting Started](getting-started.md)** — install, create a bot, bind your first chat in ~5 minutes.
+
+## Platforms
+
+- **[Discord Setup](platforms/discord.md)** — Developer Portal, bot token, intents, IDs.
+- **[Telegram Setup](platforms/telegram.md)** — BotFather, privacy mode, group chats.
+
+## Reference
+
+- **[Command Reference](reference/commands.md)** — every slash command, on both platforms.
+- **[Architecture](reference/architecture.md)** — operating model, hook gating, session resolution, file paths.
+- **[Agent Send](reference/agent-send.md)** — how `tetherly send` routes replies from inside a bound tmux session.
+- **[Security](security.md)** — restricting which servers, chats, and users can drive the bot.
 
 ## For contributors
 
-- **[Codex hooks internals](contributing/codex-hooks-internals.md)** — `Stop` / `PermissionRequest` payload schemas, design decisions, installer merge logic.
+- **[Releasing](contributing/releasing.md)** — tag flow, PyPI Trusted Publishing, versioning.
+- **[Codex Hooks Internals](contributing/codex-hooks-internals.md)** — `Stop` / `PermissionRequest` payload schemas, design decisions, installer merge logic.
 
 ## Source
 
