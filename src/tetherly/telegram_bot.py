@@ -293,8 +293,11 @@ class TelegramBot:
             )
             return
 
+        message_id = message.get("message_id") if isinstance(message.get("message_id"), int) else None
         try:
-            await self._dispatch(session, chat_id, user_id, command, args)
+            await self._dispatch(
+                session, chat_id, user_id, command, args, source_message_id=message_id
+            )
         except Exception:  # noqa: BLE001
             LOGGER.exception("command %s failed", command)
             await self._reply(session, chat_id, "Internal error. Check the bot logs.")
@@ -461,17 +464,27 @@ class TelegramBot:
         user_id: int,
         command: str,
         args: str,
+        *,
+        source_message_id: int | None = None,
     ) -> None:
         if command == "bind":
-            await self._cmd_bind(session, chat_id, user_id, args)
+            await self._cmd_bind(
+                session, chat_id, user_id, args, source_message_id=source_message_id
+            )
         elif command == "unbind":
             await self._cmd_unbind(session, chat_id, args)
         elif command == "config":
-            await self._cmd_config(session, chat_id, args)
+            await self._cmd_config(
+                session, chat_id, args, source_message_id=source_message_id
+            )
         elif command == "send":
-            await self._cmd_send(session, chat_id, args)
+            await self._cmd_send(
+                session, chat_id, args, source_message_id=source_message_id
+            )
         elif command == "key":
-            await self._cmd_key(session, chat_id, args)
+            await self._cmd_key(
+                session, chat_id, args, source_message_id=source_message_id
+            )
         elif command == "tail":
             await self._cmd_tail(session, chat_id, args)
         elif command == "status":
@@ -503,10 +516,18 @@ class TelegramBot:
         self.registry.touch(chat_id, platform=PLATFORM_TELEGRAM)
         await self._reply(session, chat_id, f"Sent `{key}` to `{binding.session_name}`.")
 
-    async def _cmd_bind(self, session, chat_id: int, user_id: int, args: str) -> None:
+    async def _cmd_bind(
+        self,
+        session,
+        chat_id: int,
+        user_id: int,
+        args: str,
+        *,
+        source_message_id: int | None = None,
+    ) -> None:
         session_arg = args.strip()
         if not session_arg:
-            await self._prompt_for_arg(session, chat_id, "bind")
+            await self._prompt_for_arg(session, chat_id, "bind", source_message_id)
             return
         try:
             session_name = normalize_session_name(session_arg)
@@ -560,7 +581,14 @@ class TelegramBot:
             f"Unbound this chat from tmux session `{binding.session_name}`.",
         )
 
-    async def _cmd_config(self, session, chat_id: int, args: str) -> None:
+    async def _cmd_config(
+        self,
+        session,
+        chat_id: int,
+        args: str,
+        *,
+        source_message_id: int | None = None,
+    ) -> None:
         binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
         if binding is None:
             await self._reply(
@@ -571,7 +599,7 @@ class TelegramBot:
             return
         value = args.strip().lower()
         if not value:
-            await self._prompt_for_arg(session, chat_id, "config")
+            await self._prompt_for_arg(session, chat_id, "config", source_message_id)
             return
         if value in TRUTHY:
             enabled = True
@@ -594,7 +622,14 @@ class TelegramBot:
             f"Auto-send {status} for `{updated.session_name}`.",
         )
 
-    async def _cmd_send(self, session, chat_id: int, args: str) -> None:
+    async def _cmd_send(
+        self,
+        session,
+        chat_id: int,
+        args: str,
+        *,
+        source_message_id: int | None = None,
+    ) -> None:
         binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
         if binding is None:
             await self._reply(
@@ -605,7 +640,7 @@ class TelegramBot:
             return
         text = args
         if not text.strip():
-            await self._prompt_for_arg(session, chat_id, "send")
+            await self._prompt_for_arg(session, chat_id, "send", source_message_id)
             return
         try:
             self.tmux_service.send_text(binding.session_name, text, press_enter=True)
@@ -619,7 +654,14 @@ class TelegramBot:
         self.registry.touch(chat_id, platform=PLATFORM_TELEGRAM)
         await self._reply(session, chat_id, f"Sent to `{binding.session_name}`.")
 
-    async def _cmd_key(self, session, chat_id: int, args: str) -> None:
+    async def _cmd_key(
+        self,
+        session,
+        chat_id: int,
+        args: str,
+        *,
+        source_message_id: int | None = None,
+    ) -> None:
         binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
         if binding is None:
             await self._reply(
@@ -630,7 +672,7 @@ class TelegramBot:
             return
         raw = args.strip()
         if not raw:
-            await self._prompt_for_arg(session, chat_id, "key")
+            await self._prompt_for_arg(session, chat_id, "key", source_message_id)
             return
         try:
             self.tmux_service.send_key(binding.session_name, raw)
@@ -721,15 +763,31 @@ class TelegramBot:
                 LOGGER.warning("telegram reply failed: %s", exc)
                 return
 
-    async def _prompt_for_arg(self, session, chat_id: int, command: str) -> None:
-        """Send a ForceReply prompt; user's reply is captured by _handle_update."""
+    async def _prompt_for_arg(
+        self,
+        session,
+        chat_id: int,
+        command: str,
+        source_message_id: int | None = None,
+    ) -> None:
+        """Send a ForceReply prompt; user's reply is captured by _handle_update.
+
+        The prompt is sent as a reply to the user's slash-command message so
+        the conversational thread stays clear, and `selective` is omitted so
+        Telegram opens the reply UI immediately in DMs.
+        """
         prompt = _ARG_PROMPTS[command]
-        await self._reply(
-            session,
-            chat_id,
-            prompt,
-            reply_markup={"force_reply": True, "selective": True},
-        )
+        del session  # _reply manages its own session
+        try:
+            await post_message(
+                self._token,
+                chat_id,
+                prompt,
+                reply_markup={"force_reply": True},
+                reply_to_message_id=source_message_id,
+            )
+        except TelegramSendError as exc:
+            LOGGER.warning("force-reply prompt failed: %s", exc)
 
 
 def _help_text() -> str:
