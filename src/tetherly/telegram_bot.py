@@ -123,6 +123,19 @@ KEY_ALIAS_COMMANDS = {
 }
 
 
+# Prompts shown when a slash command arrives without its required argument.
+# We send these with reply_markup={"force_reply": True} so Telegram opens the
+# input as a reply — when the user replies, _handle_update detects the reply
+# target and dispatches the original command with the reply text as args.
+_ARG_PROMPTS = {
+    "send": "Reply to this message with the text to send (will be followed by Enter).",
+    "bind": "Reply to this message with the tmux session name to bind.",
+    "config": "Reply to this message with `on` or `off`.",
+    "key": "Reply to this message with one of: " + ", ".join(KEY_CHOICES) + ".",
+}
+_PROMPT_TEXT_TO_COMMAND = {text: cmd for cmd, text in _ARG_PROMPTS.items()}
+
+
 @dataclass(frozen=True)
 class TelegramAccessController:
     allowed_user_ids: set[int]
@@ -142,6 +155,18 @@ def _render_code_block(text: str) -> str:
         return "```\n<empty>\n```"
     truncated = stripped[:1800]
     return f"```\n{truncated}\n```"
+
+
+def _match_arg_prompt_reply(message: dict) -> str | None:
+    """If `message` is a reply to one of our ForceReply prompts, return the command."""
+    reply_to = message.get("reply_to_message")
+    if not isinstance(reply_to, dict):
+        return None
+    sender = reply_to.get("from") or {}
+    if not sender.get("is_bot"):
+        return None
+    text = reply_to.get("text") or ""
+    return _PROMPT_TEXT_TO_COMMAND.get(text)
 
 
 def _parse_command(text: str) -> tuple[str, str] | None:
@@ -246,21 +271,28 @@ class TelegramBot:
         if not isinstance(text, str) or not text:
             return
 
+        prompt_command = _match_arg_prompt_reply(message)
+
         parsed = _parse_command(text)
-        if parsed is None:
+        if parsed is None and prompt_command is None:
             await self._maybe_auto_send(session, chat_id, user_id, text)
             return
+
+        if prompt_command is not None:
+            command = prompt_command
+            args = text.strip()
+        else:
+            command, args = parsed
 
         if not self.access_controller.is_allowed(chat_id=chat_id, user_id=user_id):
             LOGGER.info(
                 "telegram: ignored /%s from chat=%s user=%s (not on allowlist)",
-                parsed[0],
+                command,
                 chat_id,
                 user_id,
             )
             return
 
-        command, args = parsed
         try:
             await self._dispatch(session, chat_id, user_id, command, args)
         except Exception:  # noqa: BLE001
@@ -474,7 +506,7 @@ class TelegramBot:
     async def _cmd_bind(self, session, chat_id: int, user_id: int, args: str) -> None:
         session_arg = args.strip()
         if not session_arg:
-            await self._reply(session, chat_id, "Usage: /bind <session-name>")
+            await self._prompt_for_arg(session, chat_id, "bind")
             return
         try:
             session_name = normalize_session_name(session_arg)
@@ -538,6 +570,9 @@ class TelegramBot:
             )
             return
         value = args.strip().lower()
+        if not value:
+            await self._prompt_for_arg(session, chat_id, "config")
+            return
         if value in TRUTHY:
             enabled = True
         elif value in FALSY:
@@ -546,7 +581,7 @@ class TelegramBot:
             await self._reply(
                 session,
                 chat_id,
-                "Usage: /config <on|off>  — toggles plain-text auto-send for this chat.",
+                "Expected `on` or `off`.",
             )
             return
         updated = self.registry.set_auto_send(
@@ -570,7 +605,7 @@ class TelegramBot:
             return
         text = args
         if not text.strip():
-            await self._reply(session, chat_id, "Usage: /send <text>")
+            await self._prompt_for_arg(session, chat_id, "send")
             return
         try:
             self.tmux_service.send_text(binding.session_name, text, press_enter=True)
@@ -595,11 +630,7 @@ class TelegramBot:
             return
         raw = args.strip()
         if not raw:
-            await self._reply(
-                session,
-                chat_id,
-                "Usage: /key <" + "|".join(KEY_CHOICES) + ">",
-            )
+            await self._prompt_for_arg(session, chat_id, "key")
             return
         try:
             self.tmux_service.send_key(binding.session_name, raw)
@@ -689,6 +720,16 @@ class TelegramBot:
             except TelegramSendError as exc:
                 LOGGER.warning("telegram reply failed: %s", exc)
                 return
+
+    async def _prompt_for_arg(self, session, chat_id: int, command: str) -> None:
+        """Send a ForceReply prompt; user's reply is captured by _handle_update."""
+        prompt = _ARG_PROMPTS[command]
+        await self._reply(
+            session,
+            chat_id,
+            prompt,
+            reply_markup={"force_reply": True, "selective": True},
+        )
 
 
 def _help_text() -> str:
