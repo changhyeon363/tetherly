@@ -67,11 +67,12 @@ Each handler appends its raw payload to `<project>/.codex/logs/{stop,permission-
 
 ## Installer behavior
 
-`tetherly init` and `tetherly install-hooks` both call `setup.install_codex_hooks(scope=...)`. Implementation notes:
+`tetherly init` and `tetherly install-hooks` both call `setup.install_codex_hooks(scope=...)`. The user-facing merge rules — what's preserved, when backups are written, the malformed-JSON edge case — are documented in [Architecture: Hook installer](../reference/architecture.md#hook-installer-how-existing-files-are-merged).
 
-- The executable path embedded in `hooks.json` is resolved via `shutil.which("tetherly")`, falling back to `sys.argv[0]` and finally the literal string `"tetherly"`.
-- TOML merge: if `~/.codex/config.toml` (or the project equivalent) already exists, we keep its other tables and only ensure `[features] codex_hooks = true`. Existing `codex_hooks = false` is flipped, foreign sections are preserved.
-- JSON merge: existing entries for `Stop` / `PermissionRequest` that **don't** call our subcommands are left in place. Our entry is appended (so multiple tools' hooks coexist). Any prior entry that calls `codex-stop` / `codex-permission-request` is replaced to keep the array idempotent.
-- Both files are backed up to `*.bak` before any change.
+Contributor notes on top of that:
+
+- The command embedded in `hooks.json` is hard-coded to the bare string `"tetherly"` via `resolve_tetherly_executable()`. We rely on the user's `PATH` to resolve it; we do **not** record an absolute path. Keep this in mind if you ever change the install layout — pinning a path here would break for users who upgrade with `pipx upgrade` and end up at a different shim.
+- Idempotency for `hooks.json` is implemented by serializing `data` with `json.dumps(..., sort_keys=True)` before and after the merge and only writing if they differ. New event keys would need to participate in that comparison.
+- `config.toml` is rewritten with a minimal text-level edit (regex around the `[features]` section) rather than a TOML round-trip, to avoid reordering or reformatting the user's other tables.
 
 The merge logic lives in [`src/tetherly/setup.py`](../../src/tetherly/setup.py).

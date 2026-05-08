@@ -342,10 +342,12 @@ def run_init(args: argparse.Namespace) -> int:
         result = install_codex_hooks(scope="global")
         if result.config_toml_changed:
             print(f"✓ Enabled codex_hooks in {result.config_toml_path}")
+            _print_install_diff(result.config_toml_diff, indent="  ")
         else:
             print(f"· codex_hooks already enabled in {result.config_toml_path}")
         if result.hooks_json_changed:
             print(f"✓ Updated {result.hooks_json_path}")
+            _print_install_diff(result.hooks_json_diff, indent="  ")
         else:
             print(f"· {result.hooks_json_path} already up to date")
 
@@ -367,13 +369,36 @@ def run_install_hooks(args: argparse.Namespace) -> int:
     print(f"Codex hooks installed at {where}")
     if result.config_toml_changed:
         print(f"  ✓ {result.config_toml_path}: enabled codex_hooks")
+        _print_install_diff(result.config_toml_diff, indent="    ")
     else:
         print(f"  · {result.config_toml_path}: already enabled")
     if result.hooks_json_changed:
         print(f"  ✓ {result.hooks_json_path}: registered Stop and PermissionRequest")
+        _print_install_diff(result.hooks_json_diff, indent="    ")
     else:
         print(f"  · {result.hooks_json_path}: already up to date")
     return 0
+
+
+def _print_install_diff(diff: str | None, *, indent: str) -> None:
+    """Render a unified diff under the install command's `✓` line.
+
+    `diff` is `None` for newly-created files (no prior content to compare against).
+    """
+    if not diff:
+        return
+    use_color = sys.stdout.isatty()
+    for line in diff.splitlines():
+        if use_color:
+            if line.startswith("@@"):
+                line = f"\x1b[36m{line}\x1b[0m"
+            elif line.startswith("+++") or line.startswith("---"):
+                line = f"\x1b[1m{line}\x1b[0m"
+            elif line.startswith("+"):
+                line = f"\x1b[32m{line}\x1b[0m"
+            elif line.startswith("-"):
+                line = f"\x1b[31m{line}\x1b[0m"
+        print(f"{indent}{line}")
 
 
 _CONFIG_KEY_ORDER = (
