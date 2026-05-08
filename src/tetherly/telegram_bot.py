@@ -123,6 +123,15 @@ KEY_ALIAS_COMMANDS = {
 }
 
 
+# Slash commands the bot itself handles. Anything else arriving as
+# `/<word>` is forwarded to tmux as auto-send, so users can drive an inner
+# CLI (e.g. claude-code's own /help, /clear) directly from chat without
+# wrapping every call in `/send …`.
+KNOWN_COMMANDS = frozenset(
+    {entry["command"] for entry in COMMAND_DESCRIPTIONS} | {"start"}
+)
+
+
 # Prompts shown when a slash command arrives without its required argument.
 # We send these with reply_markup={"force_reply": True} so Telegram opens the
 # input as a reply — when the user replies, _handle_update detects the reply
@@ -299,17 +308,20 @@ class TelegramBot:
             return
 
         prompt_command = _match_arg_prompt_reply(message)
-
         parsed = _parse_command(text)
-        if parsed is None and prompt_command is None:
-            await self._maybe_auto_send(session, chat_id, user_id, text)
-            return
 
         if prompt_command is not None:
             command = prompt_command
             args = text.strip()
+        elif parsed is None:
+            await self._maybe_auto_send(session, chat_id, user_id, text)
+            return
         else:
             command, args = parsed
+            if command not in KNOWN_COMMANDS:
+                # Not one of our commands — let the inner CLI see it.
+                await self._maybe_auto_send(session, chat_id, user_id, text)
+                return
 
         binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
         chat_trusted = binding is not None and binding.trust_chat
