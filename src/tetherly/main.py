@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 
 from tetherly.authz import AccessController
-from tetherly.config import Config, USER_ENV_PATH, load_dotenv
+from tetherly.config import Config, ConfigError, USER_ENV_PATH, load_dotenv
 from tetherly.discord_bot import TetherlyBot, components_for_intent
 from tetherly.discord_sender import (
     DiscordSendError,
@@ -304,10 +304,20 @@ def run_init(args: argparse.Namespace) -> int:
             default=existing.get("TETHERLY_TELEGRAM_ALLOWED_USER_IDS", ""),
         )
         print("\nOptional Telegram restrictions:")
+        print("  → Group/supergroup chat IDs are NEGATIVE (e.g. -1001234567890).")
+        print("    Positive values only match private 1-on-1 DMs with the bot.")
+        print("    To find a group's ID, forward a message from it to @JsonDumpBot.")
         telegram_chat_ids = _prompt_optional_int_list(
             "  Telegram chat ID(s) to allow (comma-separated; leave blank for any)",
             default=existing.get("TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS", ""),
         )
+        if any(v > 0 for v in telegram_chat_ids):
+            print(
+                "  ⚠  One or more entries are positive — those only match private DMs."
+            )
+            print(
+                "     If you meant a group, prepend a minus sign (e.g. -1001234567890)."
+            )
 
     if not enable_discord and not enable_telegram:
         print("\n✗ At least one of Discord or Telegram must be enabled. Aborting.")
@@ -342,10 +352,12 @@ def run_init(args: argparse.Namespace) -> int:
         result = install_codex_hooks(scope="global")
         if result.config_toml_changed:
             print(f"✓ Enabled codex_hooks in {result.config_toml_path}")
+            _print_install_diff(result.config_toml_diff, indent="  ")
         else:
             print(f"· codex_hooks already enabled in {result.config_toml_path}")
         if result.hooks_json_changed:
             print(f"✓ Updated {result.hooks_json_path}")
+            _print_install_diff(result.hooks_json_diff, indent="  ")
         else:
             print(f"· {result.hooks_json_path} already up to date")
 
@@ -367,13 +379,36 @@ def run_install_hooks(args: argparse.Namespace) -> int:
     print(f"Codex hooks installed at {where}")
     if result.config_toml_changed:
         print(f"  ✓ {result.config_toml_path}: enabled codex_hooks")
+        _print_install_diff(result.config_toml_diff, indent="    ")
     else:
         print(f"  · {result.config_toml_path}: already enabled")
     if result.hooks_json_changed:
         print(f"  ✓ {result.hooks_json_path}: registered Stop and PermissionRequest")
+        _print_install_diff(result.hooks_json_diff, indent="    ")
     else:
         print(f"  · {result.hooks_json_path}: already up to date")
     return 0
+
+
+def _print_install_diff(diff: str | None, *, indent: str) -> None:
+    """Render a unified diff under the install command's `✓` line.
+
+    `diff` is `None` for newly-created files (no prior content to compare against).
+    """
+    if not diff:
+        return
+    use_color = sys.stdout.isatty()
+    for line in diff.splitlines():
+        if use_color:
+            if line.startswith("@@"):
+                line = f"\x1b[36m{line}\x1b[0m"
+            elif line.startswith("+++") or line.startswith("---"):
+                line = f"\x1b[1m{line}\x1b[0m"
+            elif line.startswith("+"):
+                line = f"\x1b[32m{line}\x1b[0m"
+            elif line.startswith("-"):
+                line = f"\x1b[31m{line}\x1b[0m"
+        print(f"{indent}{line}")
 
 
 _CONFIG_KEY_ORDER = (
@@ -413,6 +448,21 @@ def run_config_show() -> int:
         if key in seen:
             continue
         print(f"  {key}={raw}")
+    raw_chat_ids = values.get("TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS", "")
+    if raw_chat_ids:
+        try:
+            chat_ids = [int(c.strip()) for c in raw_chat_ids.split(",") if c.strip()]
+        except ValueError:
+            chat_ids = []
+        if any(v > 0 for v in chat_ids):
+            print(
+                "\nNote: TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS contains positive IDs. "
+                "Those only match private 1-on-1 DMs;"
+            )
+            print(
+                "      Telegram group/supergroup chat IDs are NEGATIVE "
+                "(e.g. -1001234567890)."
+            )
     print("\nEdit with `tetherly config edit` or re-run `tetherly init`.")
     return 0
 
@@ -740,6 +790,25 @@ def resolve_session_name(
     return current_session
 
 
+def _print_config_error(exc: ConfigError) -> None:
+    print(f"tetherly: {exc}", file=sys.stderr)
+    print(file=sys.stderr)
+    if not USER_ENV_PATH.exists():
+        print(
+            f"It looks like tetherly isn't set up yet on this machine "
+            f"({USER_ENV_PATH} not found).",
+            file=sys.stderr,
+        )
+        print("Run `tetherly init` to walk through interactive setup.", file=sys.stderr)
+    else:
+        print(f"Config file: {USER_ENV_PATH}", file=sys.stderr)
+        print(
+            "Inspect with `tetherly config show`, edit with `tetherly config edit`, "
+            "or re-run `tetherly init`.",
+            file=sys.stderr,
+        )
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -755,7 +824,11 @@ def main() -> None:
             raise SystemExit(run_config_edit())
 
     load_dotenv()
-    config = Config.from_env()
+    try:
+        config = Config.from_env()
+    except ConfigError as exc:
+        _print_config_error(exc)
+        raise SystemExit(2)
     config.configure_logging()
     registry = SessionRegistry(config.state_path)
     if args.command in (None, "run-bot"):

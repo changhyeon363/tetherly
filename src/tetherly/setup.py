@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import re
@@ -20,6 +21,20 @@ class HookInstallResult:
     hooks_json_path: Path
     config_toml_changed: bool
     hooks_json_changed: bool
+    config_toml_diff: str | None
+    hooks_json_diff: str | None
+
+
+def _unified_diff(path: Path, before: str, after: str) -> str:
+    return "".join(
+        difflib.unified_diff(
+            before.splitlines(keepends=True),
+            after.splitlines(keepends=True),
+            fromfile=f"{path} (before)",
+            tofile=f"{path} (after)",
+            n=3,
+        )
+    )
 
 
 def resolve_tetherly_executable() -> str:
@@ -100,41 +115,48 @@ def _load_codex_config(path: Path) -> dict:
         return tomllib.load(handle)
 
 
-def _ensure_codex_hooks_flag(path: Path) -> bool:
-    """Make sure `[features] codex_hooks = true` is set. Returns True if the file changed."""
-    data = _load_codex_config(path)
-    if data.get("features", {}).get("codex_hooks") is True:
-        return False
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        path.write_text("[features]\ncodex_hooks = true\n")
-        return True
-
-    backup = path.with_suffix(path.suffix + ".bak")
-    shutil.copy2(path, backup)
-
-    text = path.read_text()
+def _compute_codex_hooks_flag_text(text: str) -> str:
     features_match = re.search(r"^\s*\[features\]\s*$", text, re.MULTILINE)
     if features_match is None:
         suffix = "" if text.endswith("\n") else "\n"
-        path.write_text(f"{text}{suffix}\n[features]\ncodex_hooks = true\n")
-        return True
+        return f"{text}{suffix}\n[features]\ncodex_hooks = true\n"
 
     existing_flag = re.search(
-        r"^\s*codex_hooks\s*=\s*(true|false)\s*$",
+        r"^[ \t]*codex_hooks[ \t]*=[ \t]*(true|false)[ \t]*$",
         text[features_match.end():],
         re.MULTILINE,
     )
     if existing_flag is not None:
         absolute_start = features_match.end() + existing_flag.start()
         absolute_end = features_match.end() + existing_flag.end()
-        path.write_text(text[:absolute_start] + "codex_hooks = true" + text[absolute_end:])
-        return True
+        return text[:absolute_start] + "codex_hooks = true" + text[absolute_end:]
 
     insert_at = features_match.end()
-    path.write_text(text[:insert_at] + "\ncodex_hooks = true" + text[insert_at:])
-    return True
+    return text[:insert_at] + "\ncodex_hooks = true" + text[insert_at:]
+
+
+def _ensure_codex_hooks_flag(path: Path) -> tuple[bool, str | None]:
+    """Make sure `[features] codex_hooks = true` is set.
+
+    Returns `(changed, diff)`. `diff` is a unified diff string when an existing
+    file was modified; `None` when the file was newly created or unchanged.
+    """
+    data = _load_codex_config(path)
+    if data.get("features", {}).get("codex_hooks") is True:
+        return (False, None)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text("[features]\ncodex_hooks = true\n")
+        return (True, None)
+
+    before = path.read_text()
+    backup = path.with_suffix(path.suffix + ".bak")
+    shutil.copy2(path, backup)
+
+    after = _compute_codex_hooks_flag_text(before)
+    path.write_text(after)
+    return (True, _unified_diff(path, before, after))
 
 
 def _hook_entry(executable: str, subcommand: str, status_message: str) -> dict:
@@ -163,20 +185,23 @@ def _merge_hook_event(existing: list[dict], new_entry: dict, subcommand: str) ->
     return filtered
 
 
-def _ensure_codex_hooks_json(path: Path, executable: str) -> bool:
+def _ensure_codex_hooks_json(path: Path, executable: str) -> tuple[bool, str | None]:
     stop_entry = _hook_entry(executable, "codex-stop", HOOK_STATUS_MESSAGE_STOP)
     permission_entry = _hook_entry(
         executable, "codex-permission-request", HOOK_STATUS_MESSAGE_PERMISSION
     )
 
+    before_text: str | None
     if path.exists():
+        before_text = path.read_text()
         try:
-            data = json.loads(path.read_text() or "{}")
+            data = json.loads(before_text or "{}")
         except json.JSONDecodeError:
             data = {}
         if not isinstance(data, dict):
             data = {}
     else:
+        before_text = None
         data = {}
 
     hooks = data.setdefault("hooks", {})
@@ -193,20 +218,25 @@ def _ensure_codex_hooks_json(path: Path, executable: str) -> bool:
         "codex-permission-request",
     )
 
-    serialized_before = json.dumps(data, sort_keys=True) if path.exists() else None
+    serialized_before = json.dumps(data, sort_keys=True) if before_text is not None else None
     hooks["Stop"] = new_stop
     hooks["PermissionRequest"] = new_permission
     serialized_after = json.dumps(data, sort_keys=True)
 
     if serialized_before == serialized_after:
-        return False
+        return (False, None)
+
+    after_text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
+    if before_text is not None:
         backup = path.with_suffix(path.suffix + ".bak")
         shutil.copy2(path, backup)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
-    return True
+    path.write_text(after_text)
+
+    if before_text is None:
+        return (True, None)
+    return (True, _unified_diff(path, before_text, after_text))
 
 
 def install_codex_hooks(*, scope: str, executable: str | None = None) -> HookInstallResult:
@@ -223,13 +253,15 @@ def install_codex_hooks(*, scope: str, executable: str | None = None) -> HookIns
     hooks_path = codex_dir / "hooks.json"
     exe = executable or resolve_tetherly_executable()
 
-    config_changed = _ensure_codex_hooks_flag(config_path)
-    hooks_changed = _ensure_codex_hooks_json(hooks_path, exe)
+    config_changed, config_diff = _ensure_codex_hooks_flag(config_path)
+    hooks_changed, hooks_diff = _ensure_codex_hooks_json(hooks_path, exe)
     return HookInstallResult(
         config_toml_path=config_path,
         hooks_json_path=hooks_path,
         config_toml_changed=config_changed,
         hooks_json_changed=hooks_changed,
+        config_toml_diff=config_diff,
+        hooks_json_diff=hooks_diff,
     )
 
 

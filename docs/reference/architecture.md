@@ -53,6 +53,43 @@ Practical consequence: layer 3 catches the common case automatically, so layer 2
 
 See [Agent send](agent-send.md) for the user-facing CLI.
 
+## Hook installer: how existing files are merged
+
+`tetherly init` (Global mode) and `tetherly install-hooks` (Project mode) both write to two files inside `.codex/`: `config.toml` and `hooks.json` (under `~/.codex/` or `<project>/.codex/` depending on scope). Existing content in those files is preserved — the installer is **idempotent** and **non-destructive**.
+
+### Idempotency and backups
+
+- Re-running on an already-configured file produces no change and writes no backup.
+- When a change is needed, the original is copied to `<file>.bak` in the same directory before the new content is written. The `.bak` is overwritten on each subsequent change.
+- The CLI prints a unified diff (before → after) under the `✓` line whenever an existing file was modified, so you can see exactly what the installer touched. Newly-created files don't get a diff.
+
+### `config.toml`
+
+Only `[features].codex_hooks` is touched:
+
+| Existing state | Action |
+| --- | --- |
+| `codex_hooks = true` already | No change. |
+| `codex_hooks = false` | That line is flipped to `true`. |
+| `[features]` exists, no `codex_hooks = true\|false` line | Fresh `codex_hooks = true` line inserted directly under `[features]`. |
+| No `[features]` section | Section appended at end of file. |
+| File doesn't exist | Created with just `[features]\ncodex_hooks = true`. |
+
+Other tables and keys are left as-is.
+
+### `hooks.json`
+
+Only the `Stop` and `PermissionRequest` event arrays are modified, and even within those, only the entries matching tetherly's own subcommands are replaced:
+
+- Top-level keys other than `hooks` — **preserved**.
+- Event keys inside `hooks` other than `Stop` / `PermissionRequest` (e.g. `UserPromptSubmit`) — **preserved**.
+- Within `Stop`: entries whose command contains `codex-stop` are removed; one fresh tetherly entry is appended. Entries running other tools' commands stay.
+- Within `PermissionRequest`: same logic for `codex-permission-request`.
+
+So if you already have hand-written hooks for the same events pointing at other commands, they coexist with tetherly's after the install.
+
+**Edge case** — if the file exists but contains invalid JSON, or its top-level value isn't a JSON object, it's treated as `{}` and rewritten from scratch. The original content is preserved in `<file>.bak`, so you can restore by hand.
+
 ## Files and paths
 
 | Path | Role |
