@@ -38,16 +38,25 @@ In **private (DM) chats** you don't need this — the bot can already see all yo
 
 > Slash commands work either way; privacy mode only affects whether the bot can read non-command plain text. See [Security → Telegram](../security.md#telegram) for why DM-only is recommended.
 
-## (Recommended) Disable group invites entirely
+## (Recommended) Restrict who can invite the bot to groups
 
-If you only ever use the bot in DMs, lock that in at the BotFather level so no one — not even you, by accident — can drop the bot into a group:
+BotFather's **Allow Groups?** toggle controls whether anyone — including you — can add the bot to a *new* group. Toggling it **off does not remove** the bot from groups it's already in; existing bindings keep working.
 
-1. Open @BotFather → `/mybots` → pick your bot.
-2. **Bot Settings → Allow Groups? → Turn off**.
+That gives you two patterns:
 
-With this off, the "Add to Group" option is greyed out for every Telegram user. To use the bot in a group later, flip it back on — and remember to also configure privacy mode and `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS` before doing so.
+**DM-only:** turn it off and leave it off.
 
-This is the Telegram equivalent of Discord's "Public Bot off". See [Security → Telegram](../security.md#telegram) for the full layered model.
+1. @BotFather → `/mybots` → pick your bot → **Bot Settings → Allow Groups? → Turn off**.
+
+**Group-allowed but locked down (recommended even for group use):** turn on only during setup, off afterwards.
+
+1. Flip **Allow Groups? → on**.
+2. Add the bot to the group, run `/bind`, and configure privacy mode + `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS` if needed.
+3. Flip **Allow Groups? → off**.
+
+The bot stays in the group and keeps working. Nobody — not a hijacker, not you in a confused moment — can drop it into a *different* group until you toggle it back on. To add to another group later, just repeat steps 1-3.
+
+This is the Telegram analogue of Discord's "Public Bot off". See [Security → Telegram](../security.md#telegram) for the full layered model.
 
 ## 4. (Optional) Find a group chat ID
 

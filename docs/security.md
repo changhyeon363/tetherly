@@ -42,9 +42,11 @@ TETHERLY_TEST_GUILD_ID=YOUR_GUILD_ID    # dev-only: faster slash command sync
 
 ### 1. Bot install protection
 
-Telegram bot usernames are globally discoverable — anyone can search for `@your_bot_name` and DM it (this is unavoidable). What you *can* control is whether anyone can drop the bot into a group: in BotFather, set **Bot Settings → Allow Groups? → off** to grey out the "Add to Group" option for every Telegram user. This is the Telegram analogue of Discord's "Public Bot off". Setup steps: [Telegram Setup → Disable group invites entirely](platforms/telegram.md#recommended-disable-group-invites-entirely).
+Telegram bot usernames are globally discoverable — anyone can search for `@your_bot_name` and DM it (this is unavoidable). What you *can* control is whether anyone can drop the bot into a *group*: BotFather → **Bot Settings → Allow Groups? → off** greys out "Add to Group" for every Telegram user.
 
-DM access cannot be restricted at the platform level; that's why the user allowlist (§3) is fail-closed.
+The toggle only affects *future* additions — flipping it off does not remove the bot from groups it's already in. So the recommended pattern, even when you use the bot in groups, is to keep Allow Groups **off by default** and only flip it **on during setup** of a new group, then back off. The bot remains functional in every group you've already added it to. Detailed steps: [Telegram Setup → Restrict who can invite the bot](platforms/telegram.md#recommended-restrict-who-can-invite-the-bot-to-groups).
+
+This is the Telegram analogue of Discord's "Public Bot off". DM access cannot be restricted at the platform level; that's why the user allowlist (§3) is fail-closed.
 
 ### 2. Token
 
@@ -83,6 +85,6 @@ TETHERLY_TELEGRAM_ALLOWED_USER_IDS=YOUR_USER_ID
 ### Operational tips
 
 - Prefer DMs over groups — no privacy mode override needed.
-- If DM-only, turn **Allow Groups? off** in BotFather as well (defense in depth).
+- Keep **Allow Groups? off** by default. Flip it on only while adding the bot to a new group, then off again — existing groups keep working.
 - If you must use a group, also set `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS`.
 - Never commit tokens to git. `~/.tetherly/.env` is `chmod 600` automatically.
