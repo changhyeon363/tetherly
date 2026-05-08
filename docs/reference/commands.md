@@ -54,7 +54,9 @@ Release the current chat's binding. Required before binding the same tmux sessio
 - Discord: `/config trust_chat:true` / `/config trust_chat:false`
 - Telegram: `/config trust_chat on` / `/config trust_chat off`
 
-Both flags reset to `false` on every `/bind`, so a fresh binding never inherits the prior session's policy. The chat-/guild-level allowlist (`TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS`, `TETHERLY_ALLOWED_GUILD_IDS`) is **still enforced** with `trust_chat` on — see [Security](../security.md) for the layered model.
+`trust_chat` requires a chat-/guild-level allowlist (`TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS` / `TETHERLY_ALLOWED_GUILD_IDS`) to be set — without one, the flag is ignored and the user allowlist still gates everything. This prevents accidentally delegating access to an unbounded chat membership.
+
+Both flags reset to `false` on every `/bind`, so a fresh binding never inherits the prior session's policy. See [Security](../security.md) for the layered model.
 
 ### `/send <text>`
 

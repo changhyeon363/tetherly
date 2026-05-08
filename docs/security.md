@@ -82,13 +82,15 @@ TETHERLY_TELEGRAM_ALLOWED_USER_IDS=YOUR_USER_ID
 
 When enumerating each `user_id` is impractical (e.g. a team Telegram group), `/config trust_chat on` flips a per-binding flag that admits **every member of that chat** without the env-level user allowlist. The same flag works on Discord too — see [Command Reference → `/config`](reference/commands.md#config-auto-send-and-trust_chat) for the exact syntax.
 
+> ⚠️ **`trust_chat` requires a chat-/guild-level allowlist.** With `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS` (or `TETHERLY_ALLOWED_GUILD_IDS`) **unset**, the `trust_chat` flag is **ignored** and the user allowlist still gates everything. This prevents accidental delegation to an unbounded chat membership.
+
 ### What `trust_chat` changes
 
 - The user-level allowlist (`TETHERLY_ALLOWED_USER_IDS` / `TETHERLY_TELEGRAM_ALLOWED_USER_IDS`) is **bypassed** for that one chat. Anyone in the chat can run `/send`, `/key`, `/tail`, `/status`, `/config auto_send`, button taps, and auto-send.
 
 ### What `trust_chat` does **not** change
 
-- **Chat-/guild-level allowlist still applies.** `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS` and `TETHERLY_ALLOWED_GUILD_IDS` are checked first; a trusted chat outside those lists is still rejected.
+- **Chat-/guild-level allowlist still applies — and is now required for `trust_chat` to take effect.** `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS` and `TETHERLY_ALLOWED_GUILD_IDS` are checked first; a trusted chat outside those lists is rejected, and a trusted chat with no chat/guild allowlist set at all has its `trust_chat` flag ignored entirely.
 - **`/bind`, `/unbind`, and the `trust_chat` toggle itself stay owner-only.** Only env-allowlisted users can change which session a chat is bound to or flip the trust flag — chat-membership trust cannot bootstrap itself.
 - **`/bind` resets `trust_chat` to `false`**, mirroring `auto_send`. A fresh binding never inherits the prior session's policy.
 

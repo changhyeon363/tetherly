@@ -20,7 +20,11 @@ class AccessController:
     ) -> bool:
         if self.allowed_guild_ids and guild_id not in self.allowed_guild_ids:
             return False
-        if chat_trusted:
+        # trust_chat only delegates user-allowlist bypass when an explicit guild
+        # allowlist is in place. Without it, "anyone in the channel" is unbounded
+        # (server admins outside the operator's trust boundary could add members),
+        # so we refuse to bypass the user/role allowlist.
+        if chat_trusted and self.allowed_guild_ids:
             return True
         user_id = getattr(user, "id", None)
         if user_id in self.allowed_user_ids:

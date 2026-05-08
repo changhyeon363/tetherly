@@ -63,13 +63,25 @@ class TelegramAccessControllerTest(unittest.TestCase):
         self.assertTrue(ac.is_allowed(chat_id=42, user_id=111))
         self.assertFalse(ac.is_allowed(chat_id=99, user_id=111))
 
-    def test_chat_trusted_admits_unlisted_user(self) -> None:
+    def test_chat_trusted_admits_unlisted_user_when_chat_allowlist_set(self) -> None:
+        ac = TelegramAccessController(
+            allowed_user_ids={111}, allowed_chat_ids={42}
+        )
+        # An unlisted user passes when the chat is trusted AND the chat is on
+        # the env-level chat allowlist.
+        self.assertTrue(ac.is_allowed(chat_id=42, user_id=222, chat_trusted=True))
+        # The privileged user is still privileged.
+        self.assertTrue(ac.is_allowed(chat_id=42, user_id=111, chat_trusted=True))
+
+    def test_chat_trusted_ignored_without_chat_allowlist(self) -> None:
         ac = TelegramAccessController(
             allowed_user_ids={111}, allowed_chat_ids=set()
         )
-        # An unlisted user passes when the chat is trusted.
-        self.assertTrue(ac.is_allowed(chat_id=42, user_id=222, chat_trusted=True))
-        # The privileged user is still privileged.
+        # trust_chat alone does not bypass the user allowlist; the operator must
+        # also pin the chat via TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS so chat
+        # membership is not unbounded.
+        self.assertFalse(ac.is_allowed(chat_id=42, user_id=222, chat_trusted=True))
+        # The env-allowlisted user still passes through the user check.
         self.assertTrue(ac.is_allowed(chat_id=42, user_id=111, chat_trusted=True))
 
     def test_chat_trusted_still_honors_chat_allowlist(self) -> None:
