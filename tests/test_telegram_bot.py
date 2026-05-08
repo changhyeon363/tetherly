@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from tetherly.telegram_bot import (
     _ARG_PROMPTS,
     _PROMPT_TEXT_TO_COMMAND,
     KEY_ALIAS_COMMANDS,
+    KNOWN_COMMANDS,
     MessageIntent,
     TelegramAccessController,
+    TelegramBot,
     _match_arg_prompt_reply,
     _parse_command,
     keyboard_for_intent,
@@ -183,6 +186,73 @@ class ArgPromptTest(unittest.TestCase):
 
     def test_match_arg_prompt_reply_handles_no_reply(self) -> None:
         self.assertIsNone(_match_arg_prompt_reply({}))
+
+
+class KnownCommandsTest(unittest.TestCase):
+    def test_includes_every_dispatch_branch(self) -> None:
+        # Every name dispatched in TelegramBot._dispatch must be in
+        # KNOWN_COMMANDS, otherwise the new passthrough fallthrough would
+        # forward a real bot command to tmux instead of running it.
+        expected = {
+            "bind", "unbind", "config", "send", "key",
+            "tail", "status", "help", "start",
+        } | set(KEY_ALIAS_COMMANDS.keys())
+        self.assertTrue(expected.issubset(KNOWN_COMMANDS))
+
+
+class HandleUpdatePassthroughTest(unittest.IsolatedAsyncioTestCase):
+    def _bot(self, *, binding, allow=True):
+        cfg = mock.Mock(
+            telegram_bot_token="t", default_tail_lines=10, max_tail_lines=100
+        )
+        registry = mock.Mock()
+        registry.get.return_value = binding
+        tmux = mock.Mock()
+        ac = mock.Mock()
+        ac.is_allowed.return_value = allow
+        ac.is_privileged.return_value = True
+        bot = TelegramBot(
+            config=cfg, registry=registry, tmux_service=tmux, access_controller=ac
+        )
+        return bot, tmux
+
+    def _update(self, text: str) -> dict:
+        return {
+            "message": {
+                "chat": {"id": 100},
+                "from": {"id": 200},
+                "text": text,
+                "message_id": 7,
+            }
+        }
+
+    async def test_unknown_slash_command_forwarded_when_auto_send_on(self) -> None:
+        binding = mock.Mock(session_name="s1", auto_send=True, trust_chat=False)
+        bot, tmux = self._bot(binding=binding)
+
+        await bot._handle_update(session=None, update=self._update("/clear"))
+
+        tmux.send_text.assert_called_once_with("s1", "/clear", press_enter=True)
+
+    async def test_unknown_slash_command_dropped_when_auto_send_off(self) -> None:
+        binding = mock.Mock(session_name="s1", auto_send=False, trust_chat=False)
+        bot, tmux = self._bot(binding=binding)
+
+        await bot._handle_update(session=None, update=self._update("/clear"))
+
+        tmux.send_text.assert_not_called()
+
+    async def test_known_slash_command_does_not_passthrough(self) -> None:
+        # `/status` is a real bot command — it must not be forwarded to tmux.
+        binding = mock.Mock(session_name="s1", auto_send=True, trust_chat=False)
+        bot, tmux = self._bot(binding=binding)
+
+        with mock.patch.object(bot, "_dispatch", new=mock.AsyncMock()) as dispatch:
+            await bot._handle_update(session=None, update=self._update("/status"))
+
+        tmux.send_text.assert_not_called()
+        dispatch.assert_awaited_once()
+        self.assertEqual(dispatch.await_args.args[3], "status")
 
 
 if __name__ == "__main__":
