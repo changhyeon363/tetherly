@@ -38,6 +38,17 @@ In **private (DM) chats** you don't need this — the bot can already see all yo
 
 > Slash commands work either way; privacy mode only affects whether the bot can read non-command plain text. See [Security → Telegram](../security.md#telegram) for why DM-only is recommended.
 
+## (Recommended) Disable group invites entirely
+
+If you only ever use the bot in DMs, lock that in at the BotFather level so no one — not even you, by accident — can drop the bot into a group:
+
+1. Open @BotFather → `/mybots` → pick your bot.
+2. **Bot Settings → Allow Groups? → Turn off**.
+
+With this off, the "Add to Group" option is greyed out for every Telegram user. To use the bot in a group later, flip it back on — and remember to also configure privacy mode and `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS` before doing so.
+
+This is the Telegram equivalent of Discord's "Public Bot off". See [Security → Telegram](../security.md#telegram) for the full layered model.
+
 ## 4. (Optional) Find a group chat ID
 
 If you want to restrict the bot to specific group chats via `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS`:

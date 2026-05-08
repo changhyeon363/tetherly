@@ -40,13 +40,19 @@ TETHERLY_TEST_GUILD_ID=YOUR_GUILD_ID    # dev-only: faster slash command sync
 
 ## Telegram
 
-### 1. Token
+### 1. Bot install protection
+
+Telegram bot usernames are globally discoverable — anyone can search for `@your_bot_name` and DM it (this is unavoidable). What you *can* control is whether anyone can drop the bot into a group: in BotFather, set **Bot Settings → Allow Groups? → off** to grey out the "Add to Group" option for every Telegram user. This is the Telegram analogue of Discord's "Public Bot off". Setup steps: [Telegram Setup → Disable group invites entirely](platforms/telegram.md#recommended-disable-group-invites-entirely).
+
+DM access cannot be restricted at the platform level; that's why the user allowlist (§3) is fail-closed.
+
+### 2. Token
 
 `TELEGRAM_BOT_TOKEN` is the entirety of bot authentication. If it leaks, anyone can act as the bot — and they can also steal your incoming updates (Telegram only allows one polling client per token).
 
 If a token leaks: [@BotFather](https://t.me/BotFather) → `/revoke` → get a new token → `tetherly config edit` → restart the bot.
 
-### 2. User restriction
+### 3. User restriction
 
 `TETHERLY_TELEGRAM_ALLOWED_USER_IDS` lists Telegram users that can run commands.
 
@@ -54,11 +60,13 @@ If a token leaks: [@BotFather](https://t.me/BotFather) → `/revoke` → get a n
 - A non-allowlisted user's commands and button clicks get **no reply** — the bot logs one line server-side and ignores the input. A "permission denied" reply would advertise the bot's existence and invite further probing, so silence is intentional.
 - Practical consequence: if you tap a button or send a command and the bot doesn't react, double-check that your numeric user ID is on the allowlist via `tetherly config show`.
 
-### 3. Chat restriction (optional)
+### 4. Chat restriction (optional)
 
 `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS` lists chat IDs in which commands are accepted (your user ID for DMs, a negative number for groups). Empty = user allowlist alone is the limiter, which is usually enough for personal bots.
 
-### 4. Privacy mode
+When set, this acts as an **AND** with the user allowlist — both must match. Useful as defense-in-depth if your account is ever compromised: a hijacker on a different group still can't run commands.
+
+### 5. Privacy mode
 
 If BotFather's privacy mode is **on** (the default), the bot in groups only receives messages that start with `/`.
 
@@ -75,5 +83,6 @@ TETHERLY_TELEGRAM_ALLOWED_USER_IDS=YOUR_USER_ID
 ### Operational tips
 
 - Prefer DMs over groups — no privacy mode override needed.
+- If DM-only, turn **Allow Groups? off** in BotFather as well (defense in depth).
 - If you must use a group, also set `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS`.
 - Never commit tokens to git. `~/.tetherly/.env` is `chmod 600` automatically.
