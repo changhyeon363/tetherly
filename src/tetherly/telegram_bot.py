@@ -100,7 +100,7 @@ FALSY = {"false", "0", "no", "off", "disable", "disabled"}
 COMMAND_DESCRIPTIONS = [
     {"command": "bind", "description": "Bind this chat to a tmux session"},
     {"command": "unbind", "description": "Release this chat from its tmux session"},
-    {"command": "config", "description": "Toggle plain-text auto-send (on|off)"},
+    {"command": "config", "description": "auto-send (on|off) or trust_chat <on|off>"},
     {"command": "send", "description": "Send text + Enter to the bound tmux session"},
     {"command": "key", "description": "Send a special key (Enter, Escape, Ctrl-C, ...)"},
     {"command": "tail", "description": "Show recent output from the bound tmux session"},
@@ -130,7 +130,10 @@ KEY_ALIAS_COMMANDS = {
 _ARG_PROMPTS = {
     "send": "Reply to this message with the text to send (will be followed by Enter).",
     "bind": "Reply to this message with the tmux session name to bind.",
-    "config": "Reply to this message with `on` or `off`.",
+    "config": (
+        "Reply to this message with `on`/`off` (auto-send) "
+        "or `trust_chat on`/`trust_chat off`."
+    ),
     "key": "Reply to this message with one of: " + ", ".join(KEY_CHOICES) + ".",
 }
 _PROMPT_TEXT_TO_COMMAND = {text: cmd for cmd, text in _ARG_PROMPTS.items()}
@@ -141,11 +144,27 @@ class TelegramAccessController:
     allowed_user_ids: set[int]
     allowed_chat_ids: set[int]
 
-    def is_allowed(self, *, chat_id: int, user_id: int) -> bool:
+    def is_allowed(
+        self,
+        *,
+        chat_id: int,
+        user_id: int,
+        chat_trusted: bool = False,
+    ) -> bool:
         if self.allowed_chat_ids and chat_id not in self.allowed_chat_ids:
             return False
+        if chat_trusted:
+            return True
         if not self.allowed_user_ids:
             return False
+        return user_id in self.allowed_user_ids
+
+    def is_privileged(self, user_id: int) -> bool:
+        """True only for users on the env-level allowlist.
+
+        Used to gate commands that grant access to others (e.g. flipping
+        trust_chat on). chat-membership trust must NOT bootstrap itself.
+        """
         return user_id in self.allowed_user_ids
 
 
@@ -155,6 +174,14 @@ def _render_code_block(text: str) -> str:
         return "```\n<empty>\n```"
     truncated = stripped[:1800]
     return f"```\n{truncated}\n```"
+
+
+def _parse_bool(token: str) -> bool | None:
+    if token in TRUTHY:
+        return True
+    if token in FALSY:
+        return False
+    return None
 
 
 def _match_arg_prompt_reply(message: dict) -> str | None:
@@ -284,7 +311,11 @@ class TelegramBot:
         else:
             command, args = parsed
 
-        if not self.access_controller.is_allowed(chat_id=chat_id, user_id=user_id):
+        binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
+        chat_trusted = binding is not None and binding.trust_chat
+        if not self.access_controller.is_allowed(
+            chat_id=chat_id, user_id=user_id, chat_trusted=chat_trusted
+        ):
             LOGGER.info(
                 "telegram: ignored /%s from chat=%s user=%s (not on allowlist)",
                 command,
@@ -322,7 +353,11 @@ class TelegramBot:
             await self._answer_callback(callback_id)
             return
 
-        if not self.access_controller.is_allowed(chat_id=chat_id, user_id=user_id):
+        binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
+        chat_trusted = binding is not None and binding.trust_chat
+        if not self.access_controller.is_allowed(
+            chat_id=chat_id, user_id=user_id, chat_trusted=chat_trusted
+        ):
             LOGGER.info(
                 "telegram: ignored callback %r from chat=%s user=%s (not on allowlist)",
                 data,
@@ -440,7 +475,9 @@ class TelegramBot:
         binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
         if binding is None or not binding.auto_send:
             return
-        if not self.access_controller.is_allowed(chat_id=chat_id, user_id=user_id):
+        if not self.access_controller.is_allowed(
+            chat_id=chat_id, user_id=user_id, chat_trusted=binding.trust_chat
+        ):
             return
         content = text.strip()
         if not content or len(content) > AUTO_SEND_MAX_LENGTH:
@@ -472,10 +509,10 @@ class TelegramBot:
                 session, chat_id, user_id, args, source_message_id=source_message_id
             )
         elif command == "unbind":
-            await self._cmd_unbind(session, chat_id, args)
+            await self._cmd_unbind(session, chat_id, user_id, args)
         elif command == "config":
             await self._cmd_config(
-                session, chat_id, args, source_message_id=source_message_id
+                session, chat_id, user_id, args, source_message_id=source_message_id
             )
         elif command == "send":
             await self._cmd_send(
@@ -525,6 +562,11 @@ class TelegramBot:
         *,
         source_message_id: int | None = None,
     ) -> None:
+        if not self.access_controller.is_privileged(user_id):
+            await self._reply(
+                session, chat_id, "Only the bot owner can /bind."
+            )
+            return
         session_arg = args.strip()
         if not session_arg:
             await self._prompt_for_arg(session, chat_id, "bind", source_message_id)
@@ -563,7 +605,14 @@ class TelegramBot:
             f"{verb} this chat to tmux session `{binding.session_name}`.",
         )
 
-    async def _cmd_unbind(self, session, chat_id: int, args: str) -> None:
+    async def _cmd_unbind(
+        self, session, chat_id: int, user_id: int, args: str
+    ) -> None:
+        if not self.access_controller.is_privileged(user_id):
+            await self._reply(
+                session, chat_id, "Only the bot owner can /unbind."
+            )
+            return
         binding = self.registry.get(chat_id, platform=PLATFORM_TELEGRAM)
         if binding is None:
             await self._reply(session, chat_id, "This chat is not bound.")
@@ -585,6 +634,7 @@ class TelegramBot:
         self,
         session,
         chat_id: int,
+        user_id: int,
         args: str,
         *,
         source_message_id: int | None = None,
@@ -597,19 +647,59 @@ class TelegramBot:
                 "This chat is not bound. Run `/bind <session>` first.",
             )
             return
-        value = args.strip().lower()
-        if not value:
+        raw = args.strip()
+        if not raw:
             await self._prompt_for_arg(session, chat_id, "config", source_message_id)
             return
-        if value in TRUTHY:
-            enabled = True
-        elif value in FALSY:
-            enabled = False
+        tokens = raw.lower().split()
+        # `/config trust_chat <on|off>` vs the legacy `/config <on|off>` shortcut for auto_send.
+        if tokens[0] == "trust_chat":
+            if len(tokens) != 2:
+                await self._reply(
+                    session, chat_id, "Usage: /config trust_chat <on|off>"
+                )
+                return
+            enabled = _parse_bool(tokens[1])
+            if enabled is None:
+                await self._reply(session, chat_id, "Expected `on` or `off`.")
+                return
+            if not self.access_controller.is_privileged(user_id):
+                LOGGER.info(
+                    "telegram: refused trust_chat flip from chat=%s user=%s (not privileged)",
+                    chat_id,
+                    user_id,
+                )
+                return
+            updated = self.registry.set_trust_chat(
+                chat_id, enabled, platform=PLATFORM_TELEGRAM
+            )
+            if enabled:
+                await self._reply(
+                    session,
+                    chat_id,
+                    f"Trust-chat **enabled** for `{updated.session_name}`. "
+                    "Every member of this chat can now run commands.",
+                )
+            else:
+                await self._reply(
+                    session,
+                    chat_id,
+                    f"Trust-chat disabled for `{updated.session_name}`. "
+                    "Only allowlisted users can run commands again.",
+                )
+            return
+
+        if len(tokens) == 1:
+            enabled = _parse_bool(tokens[0])
+        elif len(tokens) == 2 and tokens[0] == "auto_send":
+            enabled = _parse_bool(tokens[1])
         else:
+            enabled = None
+        if enabled is None:
             await self._reply(
                 session,
                 chat_id,
-                "Expected `on` or `off`.",
+                "Expected `on`, `off`, or `trust_chat on|off`.",
             )
             return
         updated = self.registry.set_auto_send(
@@ -738,6 +828,7 @@ class TelegramBot:
                 headline,
                 f"Chat ID: `{binding.channel_id}`",
                 f"Auto-send: `{binding.auto_send}`",
+                f"Trust chat: `{binding.trust_chat}`",
                 f"Bound by: `{binding.bound_by}`",
                 f"Bound at: `{binding.bound_at}`",
                 f"Last used at: `{binding.last_used_at}`",
@@ -798,6 +889,7 @@ def _help_text() -> str:
         "  /bind <session>      — bind this chat to a tmux session",
         "  /unbind              — release this chat",
         "  /config <on|off>     — toggle plain-text auto-send",
+        "  /config trust_chat <on|off> — let everyone in this chat run commands",
         "  /send <text>         — send text + Enter to tmux",
         "  /key <" + "|".join(KEY_CHOICES) + "> — send a special key",
         "  /tail [lines]        — show recent tmux output",

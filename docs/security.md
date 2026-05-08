@@ -77,3 +77,27 @@ TETHERLY_TELEGRAM_ALLOWED_USER_IDS=YOUR_USER_ID
 - Prefer DMs over groups — no privacy mode override needed.
 - If you must use a group, also set `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS`.
 - Never commit tokens to git. `~/.tetherly/.env` is `chmod 600` automatically.
+
+## Trust-chat (allowlisting a whole chat)
+
+When enumerating each `user_id` is impractical (e.g. a team Telegram group), `/config trust_chat on` flips a per-binding flag that admits **every member of that chat** without the env-level user allowlist. The same flag works on Discord too — see [Command Reference → `/config`](reference/commands.md#config-auto-send-and-trust_chat) for the exact syntax.
+
+### What `trust_chat` changes
+
+- The user-level allowlist (`TETHERLY_ALLOWED_USER_IDS` / `TETHERLY_TELEGRAM_ALLOWED_USER_IDS`) is **bypassed** for that one chat. Anyone in the chat can run `/send`, `/key`, `/tail`, `/status`, `/config auto_send`, button taps, and auto-send.
+
+### What `trust_chat` does **not** change
+
+- **Chat-/guild-level allowlist still applies.** `TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS` and `TETHERLY_ALLOWED_GUILD_IDS` are checked first; a trusted chat outside those lists is still rejected.
+- **`/bind`, `/unbind`, and the `trust_chat` toggle itself stay owner-only.** Only env-allowlisted users can change which session a chat is bound to or flip the trust flag — chat-membership trust cannot bootstrap itself.
+- **`/bind` resets `trust_chat` to `false`**, mirroring `auto_send`. A fresh binding never inherits the prior session's policy.
+
+### When to use it
+
+- Team groups whose admin set you control. The chat's admins effectively become your delegation point: anyone they add to the chat gains bot access. **Don't enable it in chats with admins outside your trust boundary.**
+- DM chats: pointless — there's only one user, who you've already allowlisted.
+
+### When **not** to use it
+
+- Public or semi-public groups. Group admins (often beyond your control) effectively decide who can run commands.
+- Mixed-purpose groups where bot access should be tighter than chat membership. Stick with the user allowlist.

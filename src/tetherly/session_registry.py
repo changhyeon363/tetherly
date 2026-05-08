@@ -78,6 +78,7 @@ class SessionRegistry:
             bound_at=now,
             last_used_at=now,
             platform=platform,
+            trust_chat=False,
         )
         self._bindings[(platform, channel_id)] = binding
         self._save()
@@ -106,6 +107,26 @@ class SessionRegistry:
         updated = replace(
             binding,
             auto_send=enabled,
+            last_used_at=utc_now(),
+        )
+        self._bindings[key] = updated
+        self._save()
+        return updated
+
+    def set_trust_chat(
+        self,
+        channel_id: int,
+        enabled: bool,
+        *,
+        platform: str = PLATFORM_DISCORD,
+    ) -> ChannelBinding | None:
+        key = (platform, channel_id)
+        binding = self._bindings.get(key)
+        if binding is None:
+            return None
+        updated = replace(
+            binding,
+            trust_chat=enabled,
             last_used_at=utc_now(),
         )
         self._bindings[key] = updated
