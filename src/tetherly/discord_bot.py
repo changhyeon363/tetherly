@@ -154,11 +154,18 @@ class TetherlyBot(discord.Client):
                 headline,
                 f"Channel: <#{binding.channel_id}>",
                 f"Auto-send: `{binding.auto_send}`",
+                f"Trust chat: `{binding.trust_chat}`",
                 f"Bound by: <@{binding.bound_by}>",
                 f"Bound at: `{binding.bound_at}`",
                 f"Last used at: `{binding.last_used_at}`",
             ]
         )
+
+    def _binding_trust_chat(self, channel_id: int | None) -> bool:
+        if channel_id is None:
+            return False
+        binding = self.registry.get(channel_id)
+        return binding is not None and binding.trust_chat
 
     def _format_tail_message(self, binding, capped: int, output: str) -> str:
         return (
@@ -169,18 +176,19 @@ class TetherlyBot(discord.Client):
     async def _handle_button_action(
         self, interaction: discord.Interaction, action: str
     ) -> None:
-        if not self.access_controller.is_allowed(interaction):
-            await interaction.response.send_message(
-                "You are not allowed to use this command.",
-                ephemeral=True,
-            )
-            return
         if interaction.channel_id is None:
             await interaction.response.send_message(
                 "Channel context missing.", ephemeral=True
             )
             return
         binding = self.registry.get(interaction.channel_id)
+        chat_trusted = binding is not None and binding.trust_chat
+        if not self.access_controller.is_allowed(interaction, chat_trusted=chat_trusted):
+            await interaction.response.send_message(
+                "You are not allowed to use this command.",
+                ephemeral=True,
+            )
+            return
         if binding is None:
             await interaction.response.send_message(
                 "This channel is not bound.", ephemeral=True
@@ -240,7 +248,9 @@ class TetherlyBot(discord.Client):
         binding = self.registry.get(message.channel.id)
         if binding is None or not binding.auto_send:
             return
-        if not self.access_controller.is_allowed_user(message.guild.id, message.author):
+        if not self.access_controller.is_allowed_user(
+            message.guild.id, message.author, chat_trusted=binding.trust_chat
+        ):
             return
         content = _extract_auto_send_text(message)
         if content is None:
@@ -261,7 +271,14 @@ class TetherlyBot(discord.Client):
         @self.tree.command(name="bind", description="Bind this Discord channel to a tmux session.")
         @app_commands.describe(session="tmux session name")
         async def bind(interaction: discord.Interaction, session: str) -> None:
+            # /bind defines the binding itself — only env-level allowlisted users
+            # may run it, regardless of any trust_chat on a previous binding.
             if not await self.access_controller.assert_allowed(interaction):
+                return
+            if not self.access_controller.is_privileged(interaction.user.id):
+                await interaction.response.send_message(
+                    "Only the bot owner can /bind.", ephemeral=True
+                )
                 return
             if interaction.guild_id is None or interaction.channel_id is None:
                 await interaction.response.send_message(
@@ -306,7 +323,15 @@ class TetherlyBot(discord.Client):
             description="Release this channel from its tmux session binding.",
         )
         async def unbind(interaction: discord.Interaction) -> None:
-            if not await self.access_controller.assert_allowed(interaction):
+            chat_trusted = self._binding_trust_chat(interaction.channel_id)
+            if not await self.access_controller.assert_allowed(
+                interaction, chat_trusted=chat_trusted
+            ):
+                return
+            if not self.access_controller.is_privileged(interaction.user.id):
+                await interaction.response.send_message(
+                    "Only the bot owner can /unbind.", ephemeral=True
+                )
                 return
             binding = self.registry.get(interaction.channel_id)
             if binding is None:
@@ -331,9 +356,19 @@ class TetherlyBot(discord.Client):
             name="config",
             description="Configure channel behavior for the bound tmux session.",
         )
-        @app_commands.describe(auto_send="forward plain text messages without using /send")
-        async def config(interaction: discord.Interaction, auto_send: bool) -> None:
-            if not await self.access_controller.assert_allowed(interaction):
+        @app_commands.describe(
+            auto_send="forward plain text messages without using /send",
+            trust_chat="let everyone in this channel run commands (owner-only)",
+        )
+        async def config(
+            interaction: discord.Interaction,
+            auto_send: bool | None = None,
+            trust_chat: bool | None = None,
+        ) -> None:
+            chat_trusted = self._binding_trust_chat(interaction.channel_id)
+            if not await self.access_controller.assert_allowed(
+                interaction, chat_trusted=chat_trusted
+            ):
                 return
             binding = self.registry.get(interaction.channel_id)
             if binding is None:
@@ -342,17 +377,49 @@ class TetherlyBot(discord.Client):
                     ephemeral=True,
                 )
                 return
-            updated = self.registry.set_auto_send(interaction.channel_id, auto_send)
-            status = "enabled" if auto_send else "disabled"
+            if auto_send is None and trust_chat is None:
+                await interaction.response.send_message(
+                    "Set at least one of `auto_send` or `trust_chat`.",
+                    ephemeral=True,
+                )
+                return
+            replies: list[str] = []
+            if auto_send is not None:
+                updated = self.registry.set_auto_send(
+                    interaction.channel_id, auto_send
+                )
+                state = "enabled" if auto_send else "disabled"
+                replies.append(f"Auto-send {state} for `{updated.session_name}`.")
+            if trust_chat is not None:
+                if not self.access_controller.is_privileged(interaction.user.id):
+                    await interaction.response.send_message(
+                        "Only the bot owner can flip `trust_chat`.", ephemeral=True
+                    )
+                    return
+                updated = self.registry.set_trust_chat(
+                    interaction.channel_id, trust_chat
+                )
+                if trust_chat:
+                    replies.append(
+                        f"Trust-chat **enabled** for `{updated.session_name}`. "
+                        "Every member of this channel can now run commands."
+                    )
+                else:
+                    replies.append(
+                        f"Trust-chat disabled for `{updated.session_name}`. "
+                        "Only allowlisted users can run commands again."
+                    )
             await interaction.response.send_message(
-                f"Auto-send {status} for `{updated.session_name}`.",
-                ephemeral=True,
+                "\n".join(replies), ephemeral=True
             )
 
         @self.tree.command(name="send", description="Send text into the bound tmux session and press Enter.")
         @app_commands.describe(text="text to send")
         async def send(interaction: discord.Interaction, text: str) -> None:
-            if not await self.access_controller.assert_allowed(interaction):
+            chat_trusted = self._binding_trust_chat(interaction.channel_id)
+            if not await self.access_controller.assert_allowed(
+                interaction, chat_trusted=chat_trusted
+            ):
                 return
             binding = self.registry.get(interaction.channel_id)
             if binding is None:
@@ -391,7 +458,10 @@ class TetherlyBot(discord.Client):
             ]
         )
         async def key(interaction: discord.Interaction, key: app_commands.Choice[str]) -> None:
-            if not await self.access_controller.assert_allowed(interaction):
+            chat_trusted = self._binding_trust_chat(interaction.channel_id)
+            if not await self.access_controller.assert_allowed(
+                interaction, chat_trusted=chat_trusted
+            ):
                 return
             binding = self.registry.get(interaction.channel_id)
             if binding is None:
@@ -417,7 +487,10 @@ class TetherlyBot(discord.Client):
         @self.tree.command(name="tail", description="Show recent output from the bound tmux session.")
         @app_commands.describe(lines="number of lines to fetch")
         async def tail(interaction: discord.Interaction, lines: int | None = None) -> None:
-            if not await self.access_controller.assert_allowed(interaction):
+            chat_trusted = self._binding_trust_chat(interaction.channel_id)
+            if not await self.access_controller.assert_allowed(
+                interaction, chat_trusted=chat_trusted
+            ):
                 return
             binding = self.registry.get(interaction.channel_id)
             if binding is None:
@@ -445,7 +518,10 @@ class TetherlyBot(discord.Client):
 
         @self.tree.command(name="status", description="Show binding and tmux session status for this channel.")
         async def status(interaction: discord.Interaction) -> None:
-            if not await self.access_controller.assert_allowed(interaction):
+            chat_trusted = self._binding_trust_chat(interaction.channel_id)
+            if not await self.access_controller.assert_allowed(
+                interaction, chat_trusted=chat_trusted
+            ):
                 return
             binding = self.registry.get(interaction.channel_id)
             if binding is None:
@@ -468,7 +544,10 @@ class TetherlyBot(discord.Client):
 
         @self.tree.command(name=alias_cmd, description=description)
         async def alias(interaction: discord.Interaction) -> None:
-            if not await self.access_controller.assert_allowed(interaction):
+            chat_trusted = self._binding_trust_chat(interaction.channel_id)
+            if not await self.access_controller.assert_allowed(
+                interaction, chat_trusted=chat_trusted
+            ):
                 return
             binding = self.registry.get(interaction.channel_id)
             if binding is None:

@@ -60,6 +60,29 @@ class TelegramAccessControllerTest(unittest.TestCase):
         self.assertTrue(ac.is_allowed(chat_id=42, user_id=111))
         self.assertFalse(ac.is_allowed(chat_id=99, user_id=111))
 
+    def test_chat_trusted_admits_unlisted_user(self) -> None:
+        ac = TelegramAccessController(
+            allowed_user_ids={111}, allowed_chat_ids=set()
+        )
+        # An unlisted user passes when the chat is trusted.
+        self.assertTrue(ac.is_allowed(chat_id=42, user_id=222, chat_trusted=True))
+        # The privileged user is still privileged.
+        self.assertTrue(ac.is_allowed(chat_id=42, user_id=111, chat_trusted=True))
+
+    def test_chat_trusted_still_honors_chat_allowlist(self) -> None:
+        ac = TelegramAccessController(
+            allowed_user_ids={111}, allowed_chat_ids={42}
+        )
+        # Even with chat_trusted, a chat outside the env chat allowlist is blocked.
+        self.assertFalse(ac.is_allowed(chat_id=99, user_id=222, chat_trusted=True))
+
+    def test_is_privileged_only_env_allowlist(self) -> None:
+        ac = TelegramAccessController(
+            allowed_user_ids={111}, allowed_chat_ids=set()
+        )
+        self.assertTrue(ac.is_privileged(111))
+        self.assertFalse(ac.is_privileged(222))
+
 
 def _all_callback_data(keyboard: dict) -> list[str]:
     return [

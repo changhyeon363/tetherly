@@ -14,7 +14,7 @@ Same slash commands work in both Discord and Telegram:
 
 - `/bind <session>`: bind the current chat to a tmux session
 - `/unbind`: release this chat from its tmux session
-- `/config <auto_send>`: toggle plain-text auto-send (Discord uses `auto_send:true|false`, Telegram uses `/config on|off`)
+- `/config`: toggle plain-text auto-send (Discord `auto_send:true|false`, Telegram `/config on|off`) and `trust_chat` to let every member of a chat run commands without enumerating user IDs (owner-only)
 - `/send <text>`: send text plus Enter into the bound tmux session
 - `/key <Enter|Escape|Ctrl-C|Ctrl-D|Tab|Up|Down|Left|Right>`: send a special key
 - `/tail [lines]`: fetch recent tmux output

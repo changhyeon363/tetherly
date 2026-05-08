@@ -27,25 +27,34 @@ A tmux session is **globally unique across platforms** — bound to one Discord 
 
 | Re-bind scenario | Result |
 | --- | --- |
-| Same chat, same session | Silently overwrites. **`auto_send` resets to `false`**. |
+| Same chat, same session | Silently overwrites. **`auto_send` and `trust_chat` reset to `false`**. |
 | Same chat, different session | Silently overwrites. Old binding dropped; old tmux session is **not** killed. |
 | Session already bound elsewhere (any platform) | Rejected with an error pointing at the other chat. |
 | Different chat, new session | New binding is added. |
 
 Bindings live in `~/.tetherly/state.json` keyed by `(platform, channel/chat ID)`.
 
+`/bind` and `/unbind` are **owner-only** (env-allowlisted users) — even when `trust_chat` is on for the current binding, only the owner can change which session a chat is bound to.
+
 ### `/unbind`
 
-Release the current chat's binding. Required before binding the same tmux session somewhere else.
+Release the current chat's binding. Required before binding the same tmux session somewhere else. Owner-only (see above).
 
-### `/config` (auto-send toggle)
+### `/config` (auto-send and trust_chat)
 
-When auto-send is on, **plain text** typed into the chat is forwarded to the bound tmux session followed by Enter — you don't need `/send`.
+`/config` controls per-binding behavior. Two flags:
+
+**`auto_send`** — when on, **plain text** typed into the chat is forwarded to the bound tmux session followed by Enter (no `/send` needed).
 
 - Discord: `/config auto_send:true` / `/config auto_send:false`
-- Telegram: `/config on` / `/config off`
+- Telegram: `/config on` / `/config off` (shortcut), or `/config auto_send on|off`
 
-`/bind` resets auto-send to `false`, so re-binding silences the chat until you turn it on again.
+**`trust_chat`** — when on, **every member of the chat** can run commands; the env-level user allowlist is bypassed for that one chat. Useful for team groups where enumerating each `user_id` is impractical. Owner-only — only env-allowlisted users can flip this flag.
+
+- Discord: `/config trust_chat:true` / `/config trust_chat:false`
+- Telegram: `/config trust_chat on` / `/config trust_chat off`
+
+Both flags reset to `false` on every `/bind`, so a fresh binding never inherits the prior session's policy. The chat-/guild-level allowlist (`TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS`, `TETHERLY_ALLOWED_GUILD_IDS`) is **still enforced** with `trust_chat` on — see [Security](../security.md) for the layered model.
 
 ### `/send <text>`
 
@@ -65,10 +74,12 @@ Show the last `N` lines (default 80) of the bound session's tmux pane. Errors ep
 
 ### `/status`
 
-Show binding metadata and whether the underlying tmux session is alive.
+Show binding metadata and whether the underlying tmux session is alive. Includes `Auto-send` and `Trust chat` flags.
 
 ```
 🟢 Active — tmux session `work` is alive
+Auto-send: `False`
+Trust chat: `False`
 …
 ```
 

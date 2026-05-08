@@ -23,6 +23,7 @@ class ChannelBinding:
     bound_at: str
     last_used_at: str
     platform: str = PLATFORM_DISCORD
+    trust_chat: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -38,4 +39,5 @@ class ChannelBinding:
             bound_at=str(payload["bound_at"]),
             last_used_at=str(payload["last_used_at"]),
             platform=str(payload.get("platform", PLATFORM_DISCORD)),
+            trust_chat=bool(payload.get("trust_chat", False)),
         )
