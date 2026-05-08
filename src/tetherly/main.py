@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 
 from tetherly.authz import AccessController
-from tetherly.config import Config, USER_ENV_PATH, load_dotenv
+from tetherly.config import Config, ConfigError, USER_ENV_PATH, load_dotenv
 from tetherly.discord_bot import TetherlyBot, components_for_intent
 from tetherly.discord_sender import (
     DiscordSendError,
@@ -740,6 +740,25 @@ def resolve_session_name(
     return current_session
 
 
+def _print_config_error(exc: ConfigError) -> None:
+    print(f"tetherly: {exc}", file=sys.stderr)
+    print(file=sys.stderr)
+    if not USER_ENV_PATH.exists():
+        print(
+            f"It looks like tetherly isn't set up yet on this machine "
+            f"({USER_ENV_PATH} not found).",
+            file=sys.stderr,
+        )
+        print("Run `tetherly init` to walk through interactive setup.", file=sys.stderr)
+    else:
+        print(f"Config file: {USER_ENV_PATH}", file=sys.stderr)
+        print(
+            "Inspect with `tetherly config show`, edit with `tetherly config edit`, "
+            "or re-run `tetherly init`.",
+            file=sys.stderr,
+        )
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -755,7 +774,11 @@ def main() -> None:
             raise SystemExit(run_config_edit())
 
     load_dotenv()
-    config = Config.from_env()
+    try:
+        config = Config.from_env()
+    except ConfigError as exc:
+        _print_config_error(exc)
+        raise SystemExit(2)
     config.configure_logging()
     registry = SessionRegistry(config.state_path)
     if args.command in (None, "run-bot"):
