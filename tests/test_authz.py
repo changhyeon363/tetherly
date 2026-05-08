@@ -59,7 +59,7 @@ class AccessControllerTest(unittest.TestCase):
 
         self.assertTrue(controller.is_allowed_user(100, SimpleNamespace(id=200)))
 
-    def test_chat_trusted_admits_unlisted_user(self) -> None:
+    def test_chat_trusted_admits_unlisted_user_when_guild_allowlist_set(self) -> None:
         controller = AccessController(
             allowed_guild_ids={100},
             allowed_role_ids=set(),
@@ -68,6 +68,21 @@ class AccessControllerTest(unittest.TestCase):
         interaction = SimpleNamespace(guild_id=100, user=SimpleNamespace(id=999))
         self.assertFalse(controller.is_allowed(interaction))
         self.assertTrue(controller.is_allowed(interaction, chat_trusted=True))
+
+    def test_chat_trusted_ignored_without_guild_allowlist(self) -> None:
+        # trust_chat alone does not bypass the user allowlist; the operator
+        # must also pin the guild via TETHERLY_ALLOWED_GUILD_IDS so channel
+        # membership is not unbounded.
+        controller = AccessController(
+            allowed_guild_ids=set(),
+            allowed_role_ids=set(),
+            allowed_user_ids={200},
+        )
+        interaction = SimpleNamespace(guild_id=100, user=SimpleNamespace(id=999))
+        self.assertFalse(controller.is_allowed(interaction, chat_trusted=True))
+        # The env-allowlisted user still passes through the user check.
+        privileged = SimpleNamespace(guild_id=100, user=SimpleNamespace(id=200))
+        self.assertTrue(controller.is_allowed(privileged, chat_trusted=True))
 
     def test_chat_trusted_still_blocked_by_guild_allowlist(self) -> None:
         controller = AccessController(

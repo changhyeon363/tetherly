@@ -162,7 +162,11 @@ class TelegramAccessController:
     ) -> bool:
         if self.allowed_chat_ids and chat_id not in self.allowed_chat_ids:
             return False
-        if chat_trusted:
+        # trust_chat only delegates user-allowlist bypass when an explicit chat
+        # allowlist is in place. Without it, "anyone in the chat" is unbounded
+        # (group admins outside the operator's trust boundary could add members),
+        # so we refuse to bypass the user allowlist.
+        if chat_trusted and self.allowed_chat_ids:
             return True
         if not self.allowed_user_ids:
             return False
