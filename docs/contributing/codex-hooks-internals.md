@@ -4,7 +4,7 @@ icon: lucide/webhook
 
 # Codex Hooks — Internals
 
-Notes for contributors working on the `codex-stop` and `codex-permission-request` handlers. End-user setup and gating semantics live in [user/usage.md](../user/usage.md).
+Notes for contributors working on the `codex-stop` and `codex-permission-request` handlers. End-user setup and gating semantics live in [Architecture](../reference/architecture.md).
 
 ## What we hook
 
@@ -19,7 +19,7 @@ Codex calls `Stop` when a turn ends. Payload includes:
 - `last_assistant_message` (optional)
 - common input fields (`cwd`, `hook_event_name`, ...)
 
-`tetherly codex-stop` reads the JSON payload from stdin, looks up the bound Discord channel for the active tmux session, and forwards `last_assistant_message`. It always emits `{}` on stdout so the hook does not request a continuation.
+`tetherly codex-stop` reads the JSON payload from stdin, looks up the bound chat (Discord or Telegram) for the active tmux session, and forwards `last_assistant_message`. It always emits `{}` on stdout so the hook does not request a continuation.
 
 ### `PermissionRequest`
 
@@ -32,7 +32,7 @@ Codex calls `PermissionRequest` before showing an approval prompt. Payload inclu
 
 The payload does **not** include the TUI option labels (`1. Yes, proceed`, `2. Yes, and don't ask again for commands that start with X`, etc.) — those are rendered locally by the Codex TUI from the raw command and never travel through the hook.
 
-`tetherly codex-permission-request` forwards a Discord message with `tool_name`, the command (for `Bash`/`apply_patch`) or the full `tool_input` (for MCP tools), and the reason. It emits `{}` — no `allow`/`deny` decision — so Codex's normal approval prompt still surfaces in the terminal.
+`tetherly codex-permission-request` forwards a chat message with `tool_name`, the command (for `Bash`/`apply_patch`) or the full `tool_input` (for MCP tools), and the reason. It emits `{}` — no `allow`/`deny` decision — so Codex's normal approval prompt still surfaces in the terminal.
 
 ## Design decisions worth remembering
 
