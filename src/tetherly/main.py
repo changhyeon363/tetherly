@@ -304,10 +304,20 @@ def run_init(args: argparse.Namespace) -> int:
             default=existing.get("TETHERLY_TELEGRAM_ALLOWED_USER_IDS", ""),
         )
         print("\nOptional Telegram restrictions:")
+        print("  → Group/supergroup chat IDs are NEGATIVE (e.g. -1001234567890).")
+        print("    Positive values only match private 1-on-1 DMs with the bot.")
+        print("    To find a group's ID, forward a message from it to @JsonDumpBot.")
         telegram_chat_ids = _prompt_optional_int_list(
             "  Telegram chat ID(s) to allow (comma-separated; leave blank for any)",
             default=existing.get("TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS", ""),
         )
+        if any(v > 0 for v in telegram_chat_ids):
+            print(
+                "  ⚠  One or more entries are positive — those only match private DMs."
+            )
+            print(
+                "     If you meant a group, prepend a minus sign (e.g. -1001234567890)."
+            )
 
     if not enable_discord and not enable_telegram:
         print("\n✗ At least one of Discord or Telegram must be enabled. Aborting.")
@@ -438,6 +448,21 @@ def run_config_show() -> int:
         if key in seen:
             continue
         print(f"  {key}={raw}")
+    raw_chat_ids = values.get("TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS", "")
+    if raw_chat_ids:
+        try:
+            chat_ids = [int(c.strip()) for c in raw_chat_ids.split(",") if c.strip()]
+        except ValueError:
+            chat_ids = []
+        if any(v > 0 for v in chat_ids):
+            print(
+                "\nNote: TETHERLY_TELEGRAM_ALLOWED_CHAT_IDS contains positive IDs. "
+                "Those only match private 1-on-1 DMs;"
+            )
+            print(
+                "      Telegram group/supergroup chat IDs are NEGATIVE "
+                "(e.g. -1001234567890)."
+            )
     print("\nEdit with `tetherly config edit` or re-run `tetherly init`.")
     return 0
 
