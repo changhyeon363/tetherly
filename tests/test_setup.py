@@ -6,7 +6,11 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tetherly.setup import install_codex_hooks, resolve_tetherly_executable
+from tetherly.setup import (
+    install_claude_hooks,
+    install_codex_hooks,
+    resolve_tetherly_executable,
+)
 
 
 class ResolveTetherlyExecutableTest(unittest.TestCase):
@@ -107,6 +111,129 @@ class InstallCodexHooksTest(unittest.TestCase):
         self.assertIsNone(second.config_toml_diff)
         self.assertFalse(second.hooks_json_changed)
         self.assertIsNone(second.hooks_json_diff)
+
+
+class InstallClaudeHooksTest(unittest.TestCase):
+    def test_project_hooks_use_tetherly_command_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project = Path(tmpdir)
+            with mock.patch("tetherly.setup.Path.cwd", return_value=project):
+                result = install_claude_hooks(scope="project")
+
+            data = json.loads(result.settings_path.read_text())
+
+        stop_command = data["hooks"]["Stop"][0]["hooks"][0]["command"]
+        notification_command = data["hooks"]["Notification"][0]["hooks"][0]["command"]
+        self.assertEqual(stop_command, "tetherly claude-stop")
+        self.assertEqual(notification_command, "tetherly claude-notification")
+        self.assertEqual(
+            result.settings_path,
+            project / ".claude" / "settings.json",
+        )
+
+    def test_global_scope_uses_home_claude_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            home = Path(tmpdir)
+            with mock.patch("tetherly.setup.Path.home", return_value=home):
+                result = install_claude_hooks(scope="global")
+
+            self.assertEqual(result.settings_path, home / ".claude" / "settings.json")
+            self.assertTrue(result.settings_path.exists())
+
+    def test_preserves_unrelated_keys_and_other_event_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project = Path(tmpdir)
+            claude = project / ".claude"
+            claude.mkdir()
+            existing = {
+                "permissions": {"allow": ["Bash(ls *)"]},
+                "hooks": {
+                    "PreToolUse": [
+                        {
+                            "matcher": "Bash",
+                            "hooks": [{"type": "command", "command": "/usr/local/bin/audit"}],
+                        }
+                    ],
+                    "Stop": [
+                        {
+                            "hooks": [
+                                {"type": "command", "command": "/usr/local/bin/other-stop"}
+                            ]
+                        }
+                    ],
+                },
+            }
+            (claude / "settings.json").write_text(
+                json.dumps(existing, indent=2) + "\n"
+            )
+            with mock.patch("tetherly.setup.Path.cwd", return_value=project):
+                result = install_claude_hooks(scope="project")
+
+            data = json.loads((claude / "settings.json").read_text())
+
+        self.assertTrue(result.settings_changed)
+        self.assertEqual(data["permissions"], {"allow": ["Bash(ls *)"]})
+        self.assertIn("PreToolUse", data["hooks"])
+        # Existing non-tetherly Stop entry survives alongside the new one.
+        stop_commands = [
+            hook["command"]
+            for entry in data["hooks"]["Stop"]
+            for hook in entry["hooks"]
+        ]
+        self.assertIn("/usr/local/bin/other-stop", stop_commands)
+        self.assertIn("tetherly claude-stop", stop_commands)
+        # Notification was added fresh.
+        notification_commands = [
+            hook["command"]
+            for entry in data["hooks"]["Notification"]
+            for hook in entry["hooks"]
+        ]
+        self.assertEqual(notification_commands, ["tetherly claude-notification"])
+
+    def test_replaces_stale_tetherly_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project = Path(tmpdir)
+            claude = project / ".claude"
+            claude.mkdir()
+            (claude / "settings.json").write_text(
+                json.dumps(
+                    {
+                        "hooks": {
+                            "Stop": [
+                                {
+                                    "hooks": [
+                                        {
+                                            "type": "command",
+                                            "command": "tetherly claude-stop",
+                                            "statusMessage": "OLD",
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
+            with mock.patch("tetherly.setup.Path.cwd", return_value=project):
+                result = install_claude_hooks(scope="project")
+
+        self.assertTrue(result.settings_changed)
+        self.assertIsNotNone(result.settings_diff)
+        self.assertIn('"OLD"', result.settings_diff)
+
+    def test_diff_is_none_for_fresh_install_and_idempotent_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project = Path(tmpdir)
+            with mock.patch("tetherly.setup.Path.cwd", return_value=project):
+                first = install_claude_hooks(scope="project")
+                second = install_claude_hooks(scope="project")
+
+        self.assertTrue(first.settings_changed)
+        self.assertIsNone(first.settings_diff)
+        self.assertFalse(second.settings_changed)
+        self.assertIsNone(second.settings_diff)
 
 
 if __name__ == "__main__":

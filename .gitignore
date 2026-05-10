@@ -1,6 +1,7 @@
 .env
 .tetherly/
 .codex/
+.claude/
 .DS_Store
 
 # Local-only logo candidates. Keep the official docs assets tracked.

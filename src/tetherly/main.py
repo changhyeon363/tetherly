@@ -22,6 +22,7 @@ from tetherly.models import PLATFORM_DISCORD, PLATFORM_TELEGRAM, ChannelBinding
 from tetherly.session_registry import SessionRegistry
 from tetherly.setup import (
     ensure_user_config_dir,
+    install_claude_hooks,
     install_codex_hooks,
     read_env_file,
     write_env_file,
@@ -44,8 +45,8 @@ class RoutingError(RuntimeError):
     pass
 
 
-def _append_hook_log(name: str, payload: object) -> None:
-    log_dir = Path.cwd() / ".codex" / "logs"
+def _append_hook_log(name: str, payload: object, *, agent: str = "codex") -> None:
+    log_dir = Path.cwd() / f".{agent}" / "logs"
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         with (log_dir / f"{name}.jsonl").open("a", encoding="utf-8") as handle:
@@ -88,6 +89,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="install hooks at ~/.codex/ instead of ./.codex/",
     )
 
+    install_claude_hooks_parser = subparsers.add_parser(
+        "install-claude-hooks",
+        help="install Claude Code hooks for this project (or with --global, user-level)",
+    )
+    install_claude_hooks_parser.add_argument(
+        "--global",
+        dest="global_scope",
+        action="store_true",
+        help="install hooks at ~/.claude/ instead of ./.claude/",
+    )
+
     send_parser = subparsers.add_parser(
         "send",
         help="send a message to whichever chat (Discord/Telegram) is bound to a tmux session",
@@ -117,6 +129,16 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "codex-permission-request",
         help="handle Codex PermissionRequest hook payloads from standard input",
+    )
+
+    subparsers.add_parser(
+        "claude-stop",
+        help="handle Claude Code Stop hook payloads from standard input",
+    )
+
+    subparsers.add_parser(
+        "claude-notification",
+        help="handle Claude Code Notification hook payloads from standard input",
     )
     return parser
 
@@ -334,6 +356,17 @@ def run_init(args: argparse.Namespace) -> int:
         default="g",
     )
 
+    print()
+    claude_scope = _prompt_choice(
+        "Where should Claude Code hooks be installed?",
+        {
+            "g": "Global  — once at ~/.claude/, fires in every project",
+            "p": "Project — install per project later via `tetherly install-claude-hooks`",
+            "s": "Skip    — don't touch Claude Code hooks now",
+        },
+        default="g",
+    )
+
     ensure_user_config_dir()
     existed = write_env_file(
         path=USER_ENV_PATH,
@@ -361,6 +394,14 @@ def run_init(args: argparse.Namespace) -> int:
         else:
             print(f"· {result.hooks_json_path} already up to date")
 
+    if claude_scope == "g":
+        claude_result = install_claude_hooks(scope="global")
+        if claude_result.settings_changed:
+            print(f"✓ Updated {claude_result.settings_path}")
+            _print_install_diff(claude_result.settings_diff, indent="  ")
+        else:
+            print(f"· {claude_result.settings_path} already up to date")
+
     print("\nNext steps:")
     print("  1. Start the bot:    tetherly")
     if enable_discord:
@@ -369,6 +410,8 @@ def run_init(args: argparse.Namespace) -> int:
         print("  3. In Telegram:      /bind <your-tmux-session>")
     if scope == "p":
         print("  4. In each project:  tetherly install-hooks")
+    if claude_scope == "p":
+        print("  5. In each project:  tetherly install-claude-hooks")
     return 0
 
 
@@ -387,6 +430,21 @@ def run_install_hooks(args: argparse.Namespace) -> int:
         _print_install_diff(result.hooks_json_diff, indent="    ")
     else:
         print(f"  · {result.hooks_json_path}: already up to date")
+    return 0
+
+
+def run_install_claude_hooks(args: argparse.Namespace) -> int:
+    scope = "global" if args.global_scope else "project"
+    result = install_claude_hooks(scope=scope)
+    where = (
+        "user-level (~/.claude/)" if scope == "global" else f"project ({Path.cwd()}/.claude/)"
+    )
+    print(f"Claude Code hooks installed at {where}")
+    if result.settings_changed:
+        print(f"  ✓ {result.settings_path}: registered Stop and Notification")
+        _print_install_diff(result.settings_diff, indent="    ")
+    else:
+        print(f"  · {result.settings_path}: already up to date")
     return 0
 
 
@@ -768,6 +826,132 @@ def run_codex_permission_request(
     return 0
 
 
+def run_claude_stop(
+    *,
+    config: Config,
+    registry: SessionRegistry,
+) -> int:
+    try:
+        payload = json.load(sys.stdin)
+    except json.JSONDecodeError as exc:
+        print(f"Invalid Stop payload: {exc}", file=sys.stderr)
+        return 2
+
+    event_name = payload.get("hook_event_name")
+    if event_name is not None and event_name != "Stop":
+        _emit_empty_hook_output()
+        return 0
+
+    _append_hook_log("stop", payload, agent="claude")
+
+    if payload.get("stop_hook_active") is True:
+        _emit_empty_hook_output()
+        return 0
+
+    message = payload.get("last_assistant_message")
+    if not isinstance(message, str) or not message.strip():
+        _emit_empty_hook_output()
+        return 0
+
+    tmux_service = TmuxService()
+    current_session = _notify_session_for_hook(tmux_service)
+    if current_session is None:
+        _emit_empty_hook_output()
+        return 0
+
+    try:
+        platform, target_id, chunks = route_to_session(
+            config=config,
+            registry=registry,
+            session_name=current_session,
+            message=message,
+            intent=MessageIntent.STOP,
+        )
+    except (RoutingError, DiscordSendError, TelegramSendError) as exc:
+        print(str(exc), file=sys.stderr)
+        _emit_empty_hook_output()
+        return 1
+
+    print(
+        f"Sent {chunks} message chunk(s) to {platform} target {target_id} for session {current_session}.",
+        file=sys.stderr,
+    )
+    _emit_empty_hook_output()
+    return 0
+
+
+def _format_claude_notification_message(payload: dict) -> str | None:
+    raw_message = payload.get("message")
+    notification_type = payload.get("notification_type")
+
+    text = raw_message.strip() if isinstance(raw_message, str) else ""
+    if not text and isinstance(notification_type, str):
+        text = notification_type.strip()
+    if not text:
+        return None
+
+    if isinstance(notification_type, str) and notification_type.strip():
+        return f"[{notification_type.strip()}] {text}"
+    return text
+
+
+def run_claude_notification(
+    *,
+    config: Config,
+    registry: SessionRegistry,
+) -> int:
+    try:
+        payload = json.load(sys.stdin)
+    except json.JSONDecodeError as exc:
+        print(f"Invalid Notification payload: {exc}", file=sys.stderr)
+        return 2
+
+    event_name = payload.get("hook_event_name")
+    if event_name is not None and event_name != "Notification":
+        _emit_empty_hook_output()
+        return 0
+
+    _append_hook_log("notification", payload, agent="claude")
+
+    message = _format_claude_notification_message(payload)
+    if message is None:
+        _emit_empty_hook_output()
+        return 0
+
+    notification_type = payload.get("notification_type")
+    intent = (
+        MessageIntent.PERMISSION
+        if notification_type == "permission_prompt"
+        else MessageIntent.PLAIN
+    )
+
+    tmux_service = TmuxService()
+    current_session = _notify_session_for_hook(tmux_service)
+    if current_session is None:
+        _emit_empty_hook_output()
+        return 0
+
+    try:
+        platform, target_id, chunks = route_to_session(
+            config=config,
+            registry=registry,
+            session_name=current_session,
+            message=message,
+            intent=intent,
+        )
+    except (RoutingError, DiscordSendError, TelegramSendError) as exc:
+        print(str(exc), file=sys.stderr)
+        _emit_empty_hook_output()
+        return 1
+
+    print(
+        f"Sent {chunks} message chunk(s) to {platform} target {target_id} for session {current_session}.",
+        file=sys.stderr,
+    )
+    _emit_empty_hook_output()
+    return 0
+
+
 def resolve_session_name(
     session_arg: str | None,
     *,
@@ -817,6 +1001,8 @@ def main() -> None:
         raise SystemExit(run_init(args))
     if args.command == "install-hooks":
         raise SystemExit(run_install_hooks(args))
+    if args.command == "install-claude-hooks":
+        raise SystemExit(run_install_claude_hooks(args))
     if args.command == "config":
         if args.config_command == "show":
             raise SystemExit(run_config_show())
@@ -840,3 +1026,7 @@ def main() -> None:
         raise SystemExit(run_codex_stop(config=config, registry=registry))
     if args.command == "codex-permission-request":
         raise SystemExit(run_codex_permission_request(config=config, registry=registry))
+    if args.command == "claude-stop":
+        raise SystemExit(run_claude_stop(config=config, registry=registry))
+    if args.command == "claude-notification":
+        raise SystemExit(run_claude_notification(config=config, registry=registry))

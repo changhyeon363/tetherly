@@ -4,7 +4,7 @@ icon: lucide/box
 
 # Architecture
 
-How the moving parts fit together: the bot process, tmux sessions, bindings, and the gating that keeps Codex hooks quiet by default.
+How the moving parts fit together: the bot process, tmux sessions, bindings, and the gating that keeps agent CLI hooks quiet by default.
 
 ## One process, many sessions, many chats
 
@@ -17,9 +17,9 @@ tetherly is **one bot process, optional Discord and Telegram bots, many tmux ses
 
 You don't run a separate bot per project. Each project just binds its own tmux session to its own chat.
 
-## Codex hook gating: why global hooks stay quiet
+## Agent CLI hook gating: why global hooks stay quiet
 
-The Codex `Stop` and `PermissionRequest` handlers only forward to chat when **both** of the following are true:
+Every hook handler — Codex `Stop` / `PermissionRequest`, Claude Code `Stop` / `Notification` — only forwards to chat when **both** of the following are true:
 
 1. The current shell is inside a tmux session (`TMUX_PANE` is set).
 2. That session has `TETHERLY_NOTIFY_ON_FINISH=1` in its tmux session environment.
@@ -55,7 +55,7 @@ See [Agent send](agent-send.md) for the user-facing CLI.
 
 ## Hook installer: how existing files are merged
 
-`tetherly init` (Global mode) and `tetherly install-hooks` (Project mode) both write to two files inside `.codex/`: `config.toml` and `hooks.json` (under `~/.codex/` or `<project>/.codex/` depending on scope). Existing content in those files is preserved — the installer is **idempotent** and **non-destructive**.
+`tetherly init` (Global mode), `tetherly install-hooks` (Codex, Project mode), and `tetherly install-claude-hooks` (Claude Code, Project mode) all write to files inside `.codex/` or `.claude/` (under `~/` or `<project>/` depending on scope). Existing content is preserved — the installers are **idempotent** and **non-destructive**.
 
 ### Idempotency and backups
 
@@ -90,15 +90,29 @@ So if you already have hand-written hooks for the same events pointing at other 
 
 **Edge case** — if the file exists but contains invalid JSON, or its top-level value isn't a JSON object, it's treated as `{}` and rewritten from scratch. The original content is preserved in `<file>.bak`, so you can restore by hand.
 
+### `settings.json` (Claude Code)
+
+Claude Code reads hooks directly from `settings.json` — no separate feature-flag file. Only the `Stop` and `Notification` event arrays are touched:
+
+- Top-level keys other than `hooks` (e.g. `permissions`, `statusLine`) — **preserved**.
+- Event keys inside `hooks` other than `Stop` / `Notification` (e.g. `PreToolUse`) — **preserved**.
+- Within `Stop`: entries whose command contains `claude-stop` are removed; one fresh tetherly entry is appended. Other tools' entries stay.
+- Within `Notification`: same logic for `claude-notification`.
+
+Same edge-case handling as Codex's `hooks.json`: invalid JSON is rewritten from scratch with the original saved as `<file>.bak`.
+
 ## Files and paths
 
 | Path | Role |
 | --- | --- |
 | `~/.tetherly/.env` | Discord and/or Telegram tokens, allowed IDs. Loaded automatically. |
 | `~/.tetherly/state.json` | `(platform, channel/chat) ↔ session` bindings. |
-| `~/.codex/config.toml` + `~/.codex/hooks.json` | Global hook install. Created by `tetherly init` (Global mode). |
-| `<project>/.codex/config.toml` + `<project>/.codex/hooks.json` | Project-local hook install. Created by `tetherly install-hooks`. |
-| `<project>/.codex/logs/*.jsonl` | Raw hook payloads, gitignored. |
+| `~/.codex/config.toml` + `~/.codex/hooks.json` | Global Codex hook install. Created by `tetherly init` (Global mode). |
+| `<project>/.codex/config.toml` + `<project>/.codex/hooks.json` | Project-local Codex hook install. Created by `tetherly install-hooks`. |
+| `<project>/.codex/logs/*.jsonl` | Raw Codex hook payloads, gitignored. |
+| `~/.claude/settings.json` | Global Claude Code hook install. Created by `tetherly init` (Global mode). |
+| `<project>/.claude/settings.json` | Project-local Claude Code hook install. Created by `tetherly install-claude-hooks`. |
+| `<project>/.claude/logs/*.jsonl` | Raw Claude Code hook payloads, gitignored. |
 | `./.env` | Optional per-shell override of values in `~/.tetherly/.env`. |
 
 `TETHERLY_STATE_PATH` env var overrides the state file location if you ever need to.
@@ -110,7 +124,7 @@ So if you already have hand-written hooks for the same events pointing at other 
 | `/status` shows 🔴 GONE | tmux session was killed, binding survived | `/bind <name>` again |
 | `/bind` errors with `"already bound to … channel X"` | Stale binding from another chat whose tmux is dead | `/unbind` in chat X (any platform), or edit `state.json` to remove the old entry |
 | Plain-text auto-send seems silently ignored | tmux session is dead, or `auto_send=false` | `/status` to confirm; rebind or `/config` to enable auto-send |
-| Codex hooks never fire | Hooks not installed, or current session not `/bind`-ed | Check `tmux show-environment -t <session> TETHERLY_NOTIFY_ON_FINISH` |
+| Codex / Claude Code hooks never fire | Hooks not installed, or current session not `/bind`-ed | Check `tmux show-environment -t <session> TETHERLY_NOTIFY_ON_FINISH` |
 | `echo $TETHERLY_NOTIFY_ON_FINISH` empty inside a bound session | Expected — `tmux set-environment` doesn't reach existing shells | Hooks still work; ignore. |
 
 Platform-specific troubleshooting lives with each platform page: [Discord](../platforms/discord.md), [Telegram](../platforms/telegram.md).

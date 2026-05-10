@@ -20,12 +20,13 @@ Same slash commands work in both Discord and Telegram:
 - `/tail [lines]`: fetch recent tmux output
 - `/status`: inspect the current binding and tmux session status
 - Quick keys (no arguments): `/enter`, `/esc`, `/ctrlc`, `/ctrld`, `/tab`
-- **Inline buttons** on Codex alerts and on `/status` / `/tail`: tap `[Enter]`, `[Yes]`, `[Refresh]`, `[Stop]` directly in chat — no typing needed
+- **Inline buttons** on Codex / Claude Code alerts and on `/status` / `/tail`: tap `[Enter]`, `[Yes]`, `[Refresh]`, `[Stop]` directly in chat — no typing needed
 
 CLI helpers (run from inside a tmux session):
 
 - `tetherly send --message <text>`: forward a reply to whichever chat (Discord or Telegram) is bound to the session
 - `tetherly codex-stop` / `tetherly codex-permission-request`: Codex hook handlers that route messages to the bound chat
+- `tetherly claude-stop` / `tetherly claude-notification`: Claude Code hook handlers (Stop, Notification)
 
 A tmux session is **globally unique across platforms** — it can be bound to one Discord channel **or** one Telegram chat, not both. Run `/unbind` first to move it.
 
@@ -47,11 +48,11 @@ pipx install tetherly
 tetherly init
 ```
 
-`tetherly init` is interactive. It writes `~/.tetherly/.env` and lets you enable Discord, Telegram, or both. It also asks where to install Codex hooks:
+`tetherly init` is interactive. It writes `~/.tetherly/.env` and lets you enable Discord, Telegram, or both. It also asks where to install hooks for **Codex** and **Claude Code** (separately, so you can pick a different scope per CLI):
 
-- **Global** — writes `~/.codex/hooks.json` once. Hooks fire in every project automatically.
-- **Project** — skip global hooks and run `tetherly install-hooks` inside each project.
-- **Skip** — don't touch Codex hooks.
+- **Global** — writes once to `~/.codex/hooks.json` or `~/.claude/settings.json`. Hooks fire in every project automatically.
+- **Project** — skip global hooks and run `tetherly install-hooks` / `tetherly install-claude-hooks` inside each project.
+- **Skip** — don't touch the agent CLI's hooks.
 
 Then start the bot(s):
 
@@ -77,10 +78,11 @@ If you chose **Project** mode during init, also run once per project:
 
 ```bash
 cd <project>
-tetherly install-hooks
+tetherly install-hooks            # Codex
+tetherly install-claude-hooks     # Claude Code
 ```
 
-`install-hooks` accepts `--global` to (re)install user-level hooks instead.
+Both accept `--global` to (re)install user-level hooks instead.
 
 ### Sending from inside a session
 
@@ -125,9 +127,20 @@ tetherly send --session t1 --message "..."   # explicit session
 
 A `.env` in the current working directory still overrides `~/.tetherly/.env`. **At least one of `DISCORD_BOT_TOKEN` or `TELEGRAM_BOT_TOKEN` must be set.**
 
-## Codex hooks
+## Agent CLI hooks
 
-Both hooks only fire when the active tmux session has `TETHERLY_NOTIFY_ON_FINISH=1` — `/bind` sets this flag automatically and `/unbind` clears it, so projects without a binding stay silent even when global hooks are installed.
+All hook handlers gate on the same flag: they only forward when the active tmux session has `TETHERLY_NOTIFY_ON_FINISH=1`. `/bind` sets it, `/unbind` clears it — projects without a binding stay silent even when global hooks are installed. None of the handlers return a blocking decision, so each CLI's normal prompts still appear in the terminal.
 
-- `Stop` → `tetherly codex-stop` forwards `last_assistant_message` to the bound chat (Discord or Telegram).
-- `PermissionRequest` → `tetherly codex-permission-request` forwards the tool/command/reason. It does not return an `allow`/`deny` decision, so Codex's normal approval prompt still appears.
+### Codex
+
+Installed via `tetherly install-hooks` (or globally during `tetherly init`).
+
+- `Stop` → `tetherly codex-stop` forwards `last_assistant_message` to the bound chat.
+- `PermissionRequest` → `tetherly codex-permission-request` forwards the tool/command/reason.
+
+### Claude Code
+
+Installed via `tetherly install-claude-hooks` (or globally during `tetherly init`). Writes to `~/.claude/settings.json` (global) or `<project>/.claude/settings.json` (project) — existing keys, other event entries, and other tools' commands are preserved.
+
+- `Stop` → `tetherly claude-stop` forwards `last_assistant_message`. Skips when `stop_hook_active=true` so it doesn't double-fire if another hook is keeping Claude going.
+- `Notification` → `tetherly claude-notification` forwards the notification `message`. Routes `permission_prompt` notifications with the permission keyboard (Yes/No), other types as plain text.
