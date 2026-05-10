@@ -4,7 +4,7 @@ icon: lucide/message-square-reply
 
 # Agent Send (`tetherly send`)
 
-Send replies back to the chat (Discord or Telegram) bound to the current tmux session. Used by Codex (and any other agent) running inside a bound session.
+Send replies back to the chat (Discord or Telegram) bound to the current tmux session. Used by Codex, Claude Code, and any other agent running inside a bound session.
 
 ## Usage
 

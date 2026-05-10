@@ -10,7 +10,7 @@ icon: lucide/waypoints
 
 A Discord / Telegram chat ↔ tmux session bridge for agent-driven workflows.
 
-One process, optional Discord and Telegram bots, many tmux sessions, many chats. `/bind` a chat to a session and Codex (or any agent inside that tmux session) can post status/results back to the chat, while you control the session through slash commands.
+One process, optional Discord and Telegram bots, many tmux sessions, many chats. `/bind` a chat to a session and Codex, Claude Code, or any agent inside that tmux session can post status/results back to the chat, while you control the session through slash commands.
 
 ## Start here
 
@@ -32,6 +32,7 @@ One process, optional Discord and Telegram bots, many tmux sessions, many chats.
 
 - **[Releasing](contributing/releasing.md)** — tag flow, PyPI Trusted Publishing, versioning.
 - **[Codex Hooks Internals](contributing/codex-hooks-internals.md)** — `Stop` / `PermissionRequest` payload schemas, design decisions, installer merge logic.
+- **[Claude Code Hooks Internals](contributing/claude-code-hooks-internals.md)** — `Stop` / `Notification` payload schemas, settings.json layout, design decisions.
 
 ## Source
 

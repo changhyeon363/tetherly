@@ -51,15 +51,15 @@ This is interactive. It will:
 
 - Ask whether to enable Discord, Telegram, or both, and prompt for the relevant tokens and user IDs.
 - Write `~/.tetherly/.env` (chmod 600).
-- Ask where to install Codex hooks. **Global** = fires everywhere; **Project** = run `tetherly install-hooks` per project; **Skip** = decide later.
+- Ask where to install **Codex** hooks, then ask the same for **Claude Code** hooks. **Global** = fires everywhere; **Project** = run the install command per project; **Skip** = decide later.
 
-| Hook scope | Writes | Effect |
-| --- | --- | --- |
-| **Global** | `~/.codex/hooks.json`, `~/.codex/config.toml` | Hooks fire in every project automatically. |
-| **Project** | nothing now | Run `tetherly install-hooks` inside each project where you want hooks. |
-| **Skip** | nothing | No Codex hooks at all. You can run `tetherly install-hooks` later. |
+| Hook scope | Codex writes | Claude Code writes | Effect |
+| --- | --- | --- | --- |
+| **Global** | `~/.codex/hooks.json`, `~/.codex/config.toml` | `~/.claude/settings.json` | Hooks fire in every project automatically. |
+| **Project** | nothing now | nothing now | Run `tetherly install-hooks` / `tetherly install-claude-hooks` per project. |
+| **Skip** | nothing | nothing | No hooks installed. You can run the install commands later. |
 
-Global is safe by default because [hook gating](reference/architecture.md#codex-hook-gating-why-global-hooks-stay-quiet) means only `/bind`-ed sessions actually produce notifications.
+Global is safe by default because [hook gating](reference/architecture.md#agent-cli-hook-gating-why-global-hooks-stay-quiet) means only `/bind`-ed sessions actually produce notifications.
 
 ## 4. Start the bot
 
@@ -93,7 +93,7 @@ That's it. Now:
 
 - Anything you type in that chat goes to the `work` tmux session, followed by Enter.
 - `/send`, `/key`, `/tail`, `/status` all work — see [Command Reference](reference/commands.md).
-- Codex alerts (Stop, PermissionRequest) and `/status` / `/tail` responses include inline buttons — tap instead of typing.
+- Codex (Stop, PermissionRequest) and Claude Code (Stop, Notification) alerts and `/status` / `/tail` responses include inline buttons — tap instead of typing.
 - From inside the tmux session, `tetherly send --message "done"` posts back to the chat — see [Agent Send](reference/agent-send.md).
 
 ## Changing config later

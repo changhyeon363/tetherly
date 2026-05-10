@@ -102,8 +102,9 @@ Most messages tetherly posts attach inline buttons so you rarely need to type sl
 
 | Trigger | Buttons |
 | --- | --- |
-| Codex Stop alert ("작업이 끝났습니다") | `[Enter] [Tail] [Stop]` |
-| Codex PermissionRequest alert | `[Yes] [No] [Tail]` (Yes = Enter, No = Ctrl-C) |
+| Codex Stop / Claude Code Stop alert ("작업이 끝났습니다") | `[Enter] [Tail] [Stop]` |
+| Codex PermissionRequest / Claude Code `permission_prompt` Notification | `[Yes] [No] [Tail]` (Yes = Enter, No = Ctrl-C) |
+| Claude Code Notification (other types, e.g. `idle_prompt`) | `[Enter] [Tail] [Stop]` |
 | `/status` | `[Refresh] [Tail] [Enter] [Stop]` |
 | `/tail` | `[Refresh] [Enter] [Stop]` |
 

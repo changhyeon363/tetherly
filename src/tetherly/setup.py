@@ -13,6 +13,8 @@ from tetherly.config import USER_CONFIG_DIR, USER_ENV_PATH
 
 HOOK_STATUS_MESSAGE_STOP = "sending turn-complete notice to Discord"
 HOOK_STATUS_MESSAGE_PERMISSION = "sending permission request to Discord"
+HOOK_STATUS_MESSAGE_CLAUDE_STOP = "sending turn-complete notice to chat"
+HOOK_STATUS_MESSAGE_CLAUDE_NOTIFICATION = "sending Claude Code notification to chat"
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,13 @@ class HookInstallResult:
     hooks_json_changed: bool
     config_toml_diff: str | None
     hooks_json_diff: str | None
+
+
+@dataclass(frozen=True)
+class ClaudeHookInstallResult:
+    settings_path: Path
+    settings_changed: bool
+    settings_diff: str | None
 
 
 def _unified_diff(path: Path, before: str, after: str) -> str:
@@ -265,15 +274,100 @@ def install_codex_hooks(*, scope: str, executable: str | None = None) -> HookIns
     )
 
 
+def _ensure_claude_settings_json(path: Path, executable: str) -> tuple[bool, str | None]:
+    """Merge tetherly's Stop and Notification handlers into a Claude Code settings.json.
+
+    Claude Code reads hooks from `settings.json` (no separate feature flag needed).
+    Existing top-level keys, other event keys, and entries that point at other
+    commands are preserved.
+    """
+    stop_entry = _hook_entry(executable, "claude-stop", HOOK_STATUS_MESSAGE_CLAUDE_STOP)
+    notification_entry = _hook_entry(
+        executable, "claude-notification", HOOK_STATUS_MESSAGE_CLAUDE_NOTIFICATION
+    )
+
+    before_text: str | None
+    if path.exists():
+        before_text = path.read_text()
+        try:
+            data = json.loads(before_text or "{}")
+        except json.JSONDecodeError:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+    else:
+        before_text = None
+        data = {}
+
+    hooks = data.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        hooks = {}
+        data["hooks"] = hooks
+
+    new_stop = _merge_hook_event(
+        list(hooks.get("Stop") or []), stop_entry, "claude-stop"
+    )
+    new_notification = _merge_hook_event(
+        list(hooks.get("Notification") or []),
+        notification_entry,
+        "claude-notification",
+    )
+
+    serialized_before = json.dumps(data, sort_keys=True) if before_text is not None else None
+    hooks["Stop"] = new_stop
+    hooks["Notification"] = new_notification
+    serialized_after = json.dumps(data, sort_keys=True)
+
+    if serialized_before == serialized_after:
+        return (False, None)
+
+    after_text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if before_text is not None:
+        backup = path.with_suffix(path.suffix + ".bak")
+        shutil.copy2(path, backup)
+    path.write_text(after_text)
+
+    if before_text is None:
+        return (True, None)
+    return (True, _unified_diff(path, before_text, after_text))
+
+
+def install_claude_hooks(
+    *, scope: str, executable: str | None = None
+) -> ClaudeHookInstallResult:
+    """Install user-level (`global`) or project-level (`project`) Claude Code hooks."""
+    if scope not in ("global", "project"):
+        raise ValueError(f"unknown scope: {scope!r}")
+
+    if scope == "global":
+        claude_dir = Path.home() / ".claude"
+    else:
+        claude_dir = Path.cwd() / ".claude"
+
+    settings_path = claude_dir / "settings.json"
+    exe = executable or resolve_tetherly_executable()
+
+    changed, diff = _ensure_claude_settings_json(settings_path, exe)
+    return ClaudeHookInstallResult(
+        settings_path=settings_path,
+        settings_changed=changed,
+        settings_diff=diff,
+    )
+
+
 def ensure_user_config_dir() -> Path:
     USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     return USER_CONFIG_DIR
 
 
 __all__ = [
+    "ClaudeHookInstallResult",
     "HookInstallResult",
     "USER_ENV_PATH",
     "ensure_user_config_dir",
+    "install_claude_hooks",
     "install_codex_hooks",
     "read_env_file",
     "resolve_tetherly_executable",
